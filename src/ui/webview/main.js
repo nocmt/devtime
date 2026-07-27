@@ -42,11 +42,8 @@ function bindEvents() {
     });
   });
 
-  document.getElementById('btnSetPassword')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'setPassword' });
-  });
-  document.getElementById('btnResetPassword')?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'resetPassword' });
+  document.getElementById('btnPassword')?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'changePassword' });
   });
   document.getElementById('projectSelect')?.addEventListener('change', (e) => {
     vscode.postMessage({ type: 'switchProject', projectId: e.target.value });
@@ -63,7 +60,13 @@ function updateUI() {
     el('storageInfoFooter', '数据文件: ' + short);
   }
 
-  updateProjectSelector();
+  // 密码按钮状态
+  const btn = document.getElementById('btnPassword');
+  if (btn && currentData.hasPassword) {
+    btn.textContent = '修改密码';
+  } else if (btn) {
+    btn.textContent = '设置密码';
+  }
   updateStatsCards();
   updateChart();
   updateTypeBreakdown();

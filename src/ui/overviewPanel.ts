@@ -40,11 +40,8 @@ export class OverviewPanel {
         case 'getData':
           this.sendDataToWebview();
           break;
-        case 'setPassword':
-          await this.handleSetPassword();
-          break;
-        case 'resetPassword':
-          await this.handleResetPassword();
+        case 'changePassword':
+          await this.handleChangePassword();
           break;
         case 'switchProject':
           this.selectedProjectId = message.projectId;
@@ -92,6 +89,7 @@ export class OverviewPanel {
       data: {
         activeProjectId: activeId,
         allProjects,
+        hasPassword: this.dataStore.hasPassword(),
         projectName,
         records,
         hourlyRate,
@@ -101,28 +99,7 @@ export class OverviewPanel {
     });
   }
 
-  private async handleSetPassword(): Promise<void> {
-    const password = await vscode.window.showInputBox({
-      prompt: '请输入新密码（用于加密数据）',
-      password: true,
-    });
-    if (!password) return;
-
-    const confirm = await vscode.window.showInputBox({
-      prompt: '请再次输入密码确认',
-      password: true,
-    });
-    if (password !== confirm) {
-      vscode.window.showErrorMessage('两次密码不一致');
-      return;
-    }
-
-    await this.dataStore.setPassword(password);
-    vscode.window.showInformationMessage('密码设置成功');
-    this.sendDataToWebview();
-  }
-
-  private async handleResetPassword(): Promise<void> {
+  private async handleChangePassword(): Promise<void> {
     const oldPassword = await vscode.window.showInputBox({
       prompt: '请输入当前密码',
       password: true,
@@ -237,8 +214,7 @@ export class OverviewPanel {
       <div class="subtitle" id="storageInfo"></div>
     </div>
     <div class="actions">
-      <button id="btnSetPassword">设置密码</button>
-      <button id="btnResetPassword">重置密码</button>
+      <button id="btnPassword">设置密码</button>
     </div>
   </div>
 
