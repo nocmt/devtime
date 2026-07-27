@@ -53,8 +53,6 @@ export class OverviewPanel {
     this.panel.onDidDispose(() => {
       this.panel = undefined;
     });
-
-    this.sendDataToWebview();
   }
 
   refresh(): void {
