@@ -9,6 +9,7 @@
   "config.currency": "货币符号",
   "config.locale": "界面语言",
   "config.storagePath": "数据存储路径（留空则默认 ~/.worktime/，可设为 iCloud/Dropbox 目录实现跨电脑同步）",
+  "config.ignoredProjects": "忽略的项目文件夹名列表（不统计这些项目的时间）",
   "statusBar.tracking": "$(clock) WorkTime: {time}",
   "statusBar.idle": "$(clock) WorkTime: 空闲中",
   "statusBar.stopped": "$(clock) WorkTime: 已停止",

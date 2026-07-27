@@ -9,6 +9,7 @@
   "config.currency": "Currency symbol",
   "config.locale": "Interface language",
   "config.storagePath": "Storage path (leave empty for ~/.worktime/, use iCloud/Dropbox folder for cross-device sync)",
+  "config.ignoredProjects": "Project folder names to ignore (no time tracking for these)",
   "statusBar.tracking": "$(clock) WorkTime: {time}",
   "statusBar.idle": "$(clock) WorkTime: Idle",
   "statusBar.stopped": "$(clock) WorkTime: Stopped",

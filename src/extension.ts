@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { i18n } from './i18n/i18n';
 import { DataStore } from './storage/dataStore';
 import { TimeTracker } from './tracker/timeTracker';
@@ -17,11 +18,19 @@ export async function activate(context: vscode.ExtensionContext) {
     return;
   }
 
+  const projectName = path.basename(workspaceFolder);
+
   // 初始化 i18n
   i18n.init(context.extensionPath, workspaceFolder);
 
   // 初始化配置
   const config = getConfig();
+
+  // 检查是否在忽略列表中
+  if (config.ignoredProjects.includes(projectName)) {
+    console.log(`WorkTime: Project "${projectName}" is in ignored list, skipping tracking`);
+    return;
+  }
 
   // 初始化数据存储（传入自定义路径）
   const dataStore = new DataStore(workspaceFolder, context.secrets, config.storagePath);

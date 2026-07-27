@@ -6,6 +6,7 @@ export interface WorkTimeConfig {
   currency: string;
   locale: string;
   storagePath: string;
+  ignoredProjects: string[];
 }
 
 export function getConfig(): WorkTimeConfig {
@@ -16,6 +17,7 @@ export function getConfig(): WorkTimeConfig {
     currency: config.get<string>('currency', '¥'),
     locale: config.get<string>('locale', 'zh-CN'),
     storagePath: config.get<string>('storagePath', ''),
+    ignoredProjects: config.get<string[]>('ignoredProjects', []),
   };
 }
 

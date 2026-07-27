@@ -69,6 +69,12 @@
           "type": "string",
           "default": "",
           "description": "%config.storagePath%"
+        },
+        "worktime.ignoredProjects": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "description": "%config.ignoredProjects%"
         }
       }
     }
