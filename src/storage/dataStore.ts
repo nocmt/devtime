@@ -24,16 +24,16 @@ export interface ProjectData {
   records: Record<string, DailyRecord>; // key = YYYY-MM-DD
 }
 
-export interface WorkTimeData {
+export interface devTimeData {
   version: number;
   projects: Record<string, ProjectData>; // key = projectId (文件夹名)
 }
 
 const DATA_VERSION = 2;
-const SECRET_KEY = 'worktime.password';
+const SECRET_KEY = 'devtime.password';
 
 export class DataStore {
-  private data: WorkTimeData;
+  private data: devTimeData;
   private dataPath: string;
   private secretStorage: vscode.SecretStorage;
   private password: string | null = null;
@@ -51,10 +51,10 @@ export class DataStore {
     if (storagePath && storagePath.trim()) {
       // 用户自定义路径
       const dir = storagePath.trim();
-      this.dataPath = path.join(dir, 'worktime-data.wt');
+      this.dataPath = path.join(dir, 'devtime-data.wt');
     } else {
-      // 默认：用户 home 目录下的 .worktime/
-      this.dataPath = path.join(os.homedir(), '.worktime', 'worktime-data.wt');
+      // 默认：用户 home 目录下的 .devtime/
+      this.dataPath = path.join(os.homedir(), '.devtime', 'devtime-data.wt');
     }
 
     this.data = { version: DATA_VERSION, projects: {} };

@@ -1,4 +1,4 @@
-# WorkTime - VS Code 项目时间统计
+# DevTime - VS Code 项目时间统计
 
 统计开发者在项目上花费的时间，集中加密存储，支持多项目汇总、跨电脑同步、图表展示。
 
@@ -20,27 +20,26 @@
 
 ## 数据存储
 
-默认存储在 `~/.worktime/worktime-data.wt`（单文件、加密）。
+默认存储在 `~/.devtime/devtime-data.wt`（单文件、加密）。
 
-**跨电脑同步**：在 VS Code 设置中修改 `worktime.storagePath` 为 iCloud/Dropbox 等云盘路径：
+**跨电脑同步**：在 VS Code 设置中修改 `devtime.storagePath` 为 iCloud/Dropbox 等云盘路径：
 
 ```json
 {
-  "worktime.storagePath": "/Users/xxx/Library/Mobile Documents/com~apple~CloudDocs/worktime"
+  "devtime.storagePath": "/Users/xxx/Library/Mobile Documents/com~apple~CloudDocs/devtime"
 }
 ```
-
-也可设为任意本地路径，所有电脑指向同一云盘目录即可自动合并统计。
 
 ## 配置项
 
 | 配置 | 说明 | 默认值 |
 |------|------|--------|
-| `worktime.hourlyRate` | 时薪 | 100 |
-| `worktime.idleTimeout` | 空闲超时（秒） | 300 |
-| `worktime.currency` | 货币符号 | ¥ |
-| `worktime.locale` | 界面语言 | zh-CN |
-| `worktime.storagePath` | 数据存储路径 | ~/.worktime/ |
+| `devtime.hourlyRate` | 时薪 | 100 |
+| `devtime.idleTimeout` | 空闲超时（秒） | 300 |
+| `devtime.currency` | 货币符号 | ¥ |
+| `devtime.locale` | 界面语言 | zh-CN |
+| `devtime.storagePath` | 数据存储路径 | ~/.devtime/ |
+| `devtime.ignoredProjects` | 忽略的项目文件夹名 | [] |
 
 ## License
 

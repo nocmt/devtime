@@ -24,7 +24,7 @@ export class I18n {
    * @param workspaceFolder 工作区目录（用于加载用户自定义翻译）
    */
   init(extensionPath: string, workspaceFolder?: string): void {
-    const config = vscode.workspace.getConfiguration('worktime');
+    const config = vscode.workspace.getConfiguration('devtime');
     const locale = config.get<string>('locale', 'zh-CN');
 
     // 加载内置翻译
@@ -33,7 +33,7 @@ export class I18n {
 
     // 加载用户自定义翻译（覆盖内置）
     if (workspaceFolder) {
-      const userLocalePath = path.join(workspaceFolder, '.worktime', 'locales', `${locale}.json`);
+      const userLocalePath = path.join(workspaceFolder, '.devtime', 'locales', `${locale}.json`);
       if (fs.existsSync(userLocalePath)) {
         const userMessages = this.loadLocale(userLocalePath);
         this.messages = { ...this.messages, ...userMessages };

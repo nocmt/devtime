@@ -9,24 +9,24 @@ export class StatusBarManager {
       vscode.StatusBarAlignment.Left,
       100
     );
-    this.item.command = 'worktime.showOverview';
+    this.item.command = 'devtime.showOverview';
   }
 
   updateTracking(timeStr: string): void {
     this.item.text = i18n.t('statusBar.tracking', { time: timeStr });
-    this.item.tooltip = 'WorkTime - Click to view overview';
+    this.item.tooltip = 'DevTime - Click to view overview';
     this.item.show();
   }
 
   updateIdle(): void {
     this.item.text = i18n.t('statusBar.idle');
-    this.item.tooltip = 'WorkTime - Idle';
+    this.item.tooltip = 'DevTime - Idle';
     this.item.show();
   }
 
   updateStopped(): void {
     this.item.text = i18n.t('statusBar.stopped');
-    this.item.tooltip = 'WorkTime - Click to view overview';
+    this.item.tooltip = 'DevTime - Click to view overview';
     this.item.show();
   }
 

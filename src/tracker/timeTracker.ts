@@ -30,7 +30,7 @@ export class TimeTracker {
       vscode.StatusBarAlignment.Left,
       100
     );
-    this.statusBarItem.command = 'worktime.showOverview';
+    this.statusBarItem.command = 'devtime.showOverview';
 
     this.idleDetector = new IdleDetector(idleTimeout, (idle) => {
       if (idle && this.isTracking) {

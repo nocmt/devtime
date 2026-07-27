@@ -22,8 +22,8 @@ export class OverviewPanel {
     }
 
     this.panel = vscode.window.createWebviewPanel(
-      'worktimeOverview',
-      'WorkTime',
+      'devtimeOverview',
+      'DevTime',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -64,7 +64,7 @@ export class OverviewPanel {
   private sendDataToWebview(): void {
     if (!this.panel) return;
 
-    const config = vscode.workspace.getConfiguration('worktime');
+    const config = vscode.workspace.getConfiguration('devtime');
     const hourlyRate = config.get<number>('hourlyRate', 100);
     const currency = config.get<string>('currency', '¥');
     const allProjects = this.dataStore.getAllProjectsSummary();
@@ -142,7 +142,7 @@ export class OverviewPanel {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.jsdelivr.net ${this.panel!.webview.cspSource}; style-src 'unsafe-inline';">
-  <title>WorkTime</title>
+  <title>DevTime</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -210,7 +210,7 @@ export class OverviewPanel {
 <body>
   <div class="header">
     <div>
-      <h1>WorkTime</h1>
+      <h1>DevTime</h1>
       <div class="subtitle" id="storageInfo"></div>
     </div>
     <div class="actions">

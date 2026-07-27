@@ -11,11 +11,11 @@ let tracker: TimeTracker | undefined;
 let overviewPanel: OverviewPanel | undefined;
 
 export async function activate(context: vscode.ExtensionContext) {
-  console.log('WorkTime extension activated');
+  console.log('DevTime extension activated');
 
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!workspaceFolder) {
-    vscode.window.showWarningMessage('WorkTime: No workspace folder open');
+    vscode.window.showWarningMessage('DevTime: No workspace folder open');
     return;
   }
 
@@ -29,7 +29,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // 检查是否在忽略列表中
   if (config.ignoredProjects.includes(projectName)) {
-    console.log(`WorkTime: Project "${projectName}" is in ignored list, skipping tracking`);
+    console.log(`DevTime: Project "${projectName}" is in ignored list, skipping tracking`);
     return;
   }
 
@@ -44,7 +44,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // 数据文件不存在 → 首次使用，直接设密码
     if (!hasDataFile) {
       const password = await vscode.window.showInputBox({
-        prompt: '首次使用，请设置 WorkTime 密码（用于加密数据）',
+        prompt: '首次使用，请设置 DevTime 密码（用于加密数据）',
         password: true,
       });
       if (!password) return;
@@ -64,7 +64,7 @@ export async function activate(context: vscode.ExtensionContext) {
       let retry = true;
       while (retry) {
         const password = await vscode.window.showInputBox({
-          prompt: '请输入 WorkTime 密码',
+          prompt: '请输入 DevTime 密码',
           password: true,
         });
         if (!password) break;
@@ -119,27 +119,27 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // 注册命令
   context.subscriptions.push(
-    vscode.commands.registerCommand('worktime.showOverview', () => {
+    vscode.commands.registerCommand('devtime.showOverview', () => {
       overviewPanel?.show();
     }),
 
-    vscode.commands.registerCommand('worktime.setPassword', async () => {
+    vscode.commands.registerCommand('devtime.setPassword', async () => {
       // 首次设置/忘记密码后重设
       await promptNewPassword(dataStore);
       overviewPanel?.refresh();
     }),
 
-    vscode.commands.registerCommand('worktime.resetPassword', async () => {
+    vscode.commands.registerCommand('devtime.resetPassword', async () => {
       // 正常换密码：验证旧密码 → 换新密码
       await handleChangePassword(dataStore);
       overviewPanel?.refresh();
     }),
 
-    vscode.commands.registerCommand('worktime.startTracking', () => {
+    vscode.commands.registerCommand('devtime.startTracking', () => {
       tracker?.start();
     }),
 
-    vscode.commands.registerCommand('worktime.stopTracking', async () => {
+    vscode.commands.registerCommand('devtime.stopTracking', async () => {
       await tracker?.stop();
     })
   );
@@ -153,7 +153,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
-      if (e.affectsConfiguration('worktime')) {
+      if (e.affectsConfiguration('devtime')) {
         overviewPanel?.refresh();
       }
     })
@@ -164,7 +164,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // 提示存储位置
   vscode.window.showInformationMessage(
-    `WorkTime: 计时已开始 | 数据存储: ${dataStore.getStoragePath()}`
+    `DevTime: 计时已开始 | 数据存储: ${dataStore.getStoragePath()}`
   );
 }
 

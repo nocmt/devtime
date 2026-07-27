@@ -1,4 +1,4 @@
-// WorkTime Webview Frontend
+// DevTime Webview Frontend
 
 const vscode = acquireVsCodeApi();
 

@@ -1,12 +1,12 @@
 {
-  "name": "worktime",
-  "displayName": "WorkTime - 项目时间统计",
+  "name": "dev-time",
+  "displayName": "DevTime - 项目时间统计",
   "description": "统计开发者在项目上花费的时间，集中加密存储，支持多项目汇总、跨电脑同步、图表展示",
   "version": "0.3.0",
   "publisher": "nocmt",
   "repository": {
     "type": "git",
-    "url": "https://github.com/nocmt/worktime"
+    "url": "https://github.com/nocmt/devtime"
   },
   "engines": {
     "vscode": "^1.80.0"
@@ -22,45 +22,45 @@
   "contributes": {
     "commands": [
       {
-        "command": "worktime.showOverview",
-        "title": "%command.showOverview%"
+        "command": "devtime.showOverview",
+        "title": "DevTime: 打开概览"
       },
       {
-        "command": "worktime.setPassword",
-        "title": "%command.setPassword%"
+        "command": "devtime.setPassword",
+        "title": "DevTime: 设置密码"
       },
       {
-        "command": "worktime.resetPassword",
-        "title": "%command.resetPassword%"
+        "command": "devtime.resetPassword",
+        "title": "DevTime: 修改密码"
       },
       {
-        "command": "worktime.startTracking",
-        "title": "%command.startTracking%"
+        "command": "devtime.startTracking",
+        "title": "DevTime: 开始计时"
       },
       {
-        "command": "worktime.stopTracking",
-        "title": "%command.stopTracking%"
+        "command": "devtime.stopTracking",
+        "title": "DevTime: 停止计时"
       }
     ],
     "configuration": {
-      "title": "WorkTime",
+      "title": "DevTime",
       "properties": {
-        "worktime.hourlyRate": {
+        "devtime.hourlyRate": {
           "type": "number",
           "default": 100,
           "description": "%config.hourlyRate%"
         },
-        "worktime.idleTimeout": {
+        "devtime.idleTimeout": {
           "type": "number",
           "default": 300,
           "description": "%config.idleTimeout%"
         },
-        "worktime.currency": {
+        "devtime.currency": {
           "type": "string",
           "default": "¥",
           "description": "%config.currency%"
         },
-        "worktime.locale": {
+        "devtime.locale": {
           "type": "string",
           "default": "zh-CN",
           "enum": [
@@ -69,12 +69,12 @@
           ],
           "description": "%config.locale%"
         },
-        "worktime.storagePath": {
+        "devtime.storagePath": {
           "type": "string",
           "default": "",
           "description": "%config.storagePath%"
         },
-        "worktime.ignoredProjects": {
+        "devtime.ignoredProjects": {
           "type": "array",
           "items": { "type": "string" },
           "default": [],

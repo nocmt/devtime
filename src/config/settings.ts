@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 
-export interface WorkTimeConfig {
+export interface devTimeConfig {
   hourlyRate: number;
   idleTimeout: number;
   currency: string;
@@ -9,8 +9,8 @@ export interface WorkTimeConfig {
   ignoredProjects: string[];
 }
 
-export function getConfig(): WorkTimeConfig {
-  const config = vscode.workspace.getConfiguration('worktime');
+export function getConfig(): devTimeConfig {
+  const config = vscode.workspace.getConfiguration('devtime');
   return {
     hourlyRate: config.get<number>('hourlyRate', 100),
     idleTimeout: config.get<number>('idleTimeout', 300),
@@ -21,9 +21,9 @@ export function getConfig(): WorkTimeConfig {
   };
 }
 
-export function onConfigChange(callback: (config: WorkTimeConfig) => void): vscode.Disposable {
+export function onConfigChange(callback: (config: devTimeConfig) => void): vscode.Disposable {
   return vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration('worktime')) {
+    if (e.affectsConfiguration('devtime')) {
       callback(getConfig());
     }
   });
