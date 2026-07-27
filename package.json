@@ -2,7 +2,7 @@
   "name": "idev-time",
   "displayName": "DevTime - 项目时间统计",
   "description": "统计开发者在项目上花费的时间，集中加密存储，支持多项目汇总、跨电脑同步、图表展示",
-  "version": "1.0.0",
+  "version": "2.0.3",
   "publisher": "nocmt",
   "repository": {
     "type": "git",
@@ -24,14 +24,6 @@
       {
         "command": "devtime.showOverview",
         "title": "DevTime: 打开概览"
-      },
-      {
-        "command": "devtime.setPassword",
-        "title": "DevTime: 设置密码"
-      },
-      {
-        "command": "devtime.resetPassword",
-        "title": "DevTime: 修改密码"
       },
       {
         "command": "devtime.startTracking",
