@@ -2,7 +2,7 @@
   "name": "worktime",
   "displayName": "WorkTime - 项目时间统计",
   "description": "统计开发者在项目上花费的时间，集中加密存储，支持多项目汇总、跨电脑同步、图表展示",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "nocmt",
   "engines": {
     "vscode": "^1.80.0"
@@ -14,6 +14,7 @@
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
+  "icon": "icon.png",
   "contributes": {
     "commands": [
       {
@@ -58,7 +59,10 @@
         "worktime.locale": {
           "type": "string",
           "default": "zh-CN",
-          "enum": ["zh-CN", "en"],
+          "enum": [
+            "zh-CN",
+            "en"
+          ],
           "description": "%config.locale%"
         },
         "worktime.storagePath": {
