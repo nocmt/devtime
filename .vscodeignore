@@ -1,0 +1,10 @@
+.vscode/**
+node_modules/**
+tsconfig.json
+esbuild.js
+.gitignore
+src/config/**
+src/storage/**
+src/tracker/**
+src/ui/statusBar.ts
+src/*.ts

@@ -1,0 +1,75 @@
+{
+  "name": "worktime",
+  "displayName": "WorkTime - 项目时间统计",
+  "description": "统计开发者在项目上花费的时间，支持加密存储、git 同步、图表展示",
+  "version": "0.1.0",
+  "publisher": "nocmt",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "worktime.showOverview",
+        "title": "%command.showOverview%"
+      },
+      {
+        "command": "worktime.setPassword",
+        "title": "%command.setPassword%"
+      },
+      {
+        "command": "worktime.resetPassword",
+        "title": "%command.resetPassword%"
+      },
+      {
+        "command": "worktime.startTracking",
+        "title": "%command.startTracking%"
+      },
+      {
+        "command": "worktime.stopTracking",
+        "title": "%command.stopTracking%"
+      }
+    ],
+    "configuration": {
+      "title": "WorkTime",
+      "properties": {
+        "worktime.hourlyRate": {
+          "type": "number",
+          "default": 100,
+          "description": "%config.hourlyRate%"
+        },
+        "worktime.idleTimeout": {
+          "type": "number",
+          "default": 300,
+          "description": "%config.idleTimeout%"
+        },
+        "worktime.currency": {
+          "type": "string",
+          "default": "¥",
+          "description": "%config.currency%"
+        },
+        "worktime.locale": {
+          "type": "string",
+          "default": "zh-CN",
+          "enum": [
+            "zh-CN",
+            "en"
+          ],
+          "description": "%config.locale%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "vsce package"
+  }
+}
