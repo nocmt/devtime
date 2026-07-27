@@ -75,17 +75,20 @@ function updateUI() {
 function updateProjectSelector() {
   const projects = currentData.allProjects || [];
   const select = document.getElementById('projectSelect');
-  const badge = document.getElementById('currentBadge');
-  if (!select || projects.length === 0) return;
+  if (!select) return;
 
   const currentId = currentData.activeProjectId;
 
-  select.innerHTML = projects.map(p =>
-    `<option value="${p.id}" ${p.id === currentId ? 'selected' : ''}>${p.name} · ${formatTime(p.totalSeconds)}</option>`
-  ).join('');
+  if (projects.length === 0) {
+    select.innerHTML = '<option value="">暂无项目数据</option>';
+  } else {
+    select.innerHTML = projects.map(p =>
+      `<option value="${p.id}" ${p.id === currentId ? 'selected' : ''}>${p.name} · ${formatTime(p.totalSeconds)}</option>`
+    ).join('');
+  }
 
-  // 标记"当前"
-  if (currentId) {
+  const badge = document.getElementById('currentBadge');
+  if (badge && currentId) {
     const isCurrent = select.value === currentId;
     badge.style.display = isCurrent ? 'inline-block' : 'none';
   }
