@@ -7,6 +7,7 @@ export class OverviewPanel {
   private panel: vscode.WebviewPanel | undefined;
   private dataStore: DataStore;
   private extensionPath: string;
+  private selectedProjectId: string | null = null;
 
   constructor(dataStore: DataStore, extensionPath: string) {
     this.dataStore = dataStore;
@@ -16,6 +17,7 @@ export class OverviewPanel {
   show(): void {
     if (this.panel) {
       this.panel.reveal();
+      this.sendDataToWebview();
       return;
     }
 
@@ -44,6 +46,10 @@ export class OverviewPanel {
         case 'resetPassword':
           await this.handleResetPassword();
           break;
+        case 'switchProject':
+          this.selectedProjectId = message.projectId;
+          this.sendDataToWebview();
+          break;
       }
     });
 
@@ -64,15 +70,30 @@ export class OverviewPanel {
     const config = vscode.workspace.getConfiguration('worktime');
     const hourlyRate = config.get<number>('hourlyRate', 100);
     const currency = config.get<string>('currency', '¥');
-    const projectData = this.dataStore.getCurrentProjectData();
     const allProjects = this.dataStore.getAllProjectsSummary();
+
+    // 默认选当前项目
+    const activeId = this.selectedProjectId || this.dataStore.getProjectId();
+
+    let records: Record<string, any> = {};
+    let projectName = '';
+
+    const projectData = this.selectedProjectId
+      ? this.dataStore.getProjectData(this.selectedProjectId)
+      : this.dataStore.getCurrentProjectData();
+
+    if (projectData) {
+      records = projectData.records;
+      projectName = projectData.name;
+    }
 
     this.panel.webview.postMessage({
       type: 'updateData',
       data: {
-        projectName: projectData.name,
-        records: projectData.records,
+        activeProjectId: activeId,
         allProjects,
+        projectName,
+        records,
         hourlyRate,
         currency,
         storagePath: this.dataStore.getStoragePath(),
@@ -82,7 +103,7 @@ export class OverviewPanel {
 
   private async handleSetPassword(): Promise<void> {
     const password = await vscode.window.showInputBox({
-      prompt: '请输入 WorkTime 密码（用于加密数据）',
+      prompt: '请输入新密码（用于加密数据）',
       password: true,
     });
     if (!password) return;
@@ -102,13 +123,34 @@ export class OverviewPanel {
   }
 
   private async handleResetPassword(): Promise<void> {
-    const confirm = await vscode.window.showWarningMessage(
-      '确认重置密码？这将使用新密码重新加密数据',
-      { modal: true },
-      'OK'
-    );
-    if (confirm !== 'OK') return;
-    await this.handleSetPassword();
+    const oldPassword = await vscode.window.showInputBox({
+      prompt: '请输入当前密码',
+      password: true,
+    });
+    if (!oldPassword) return;
+
+    const newPassword = await vscode.window.showInputBox({
+      prompt: '请输入新密码',
+      password: true,
+    });
+    if (!newPassword) return;
+
+    const newConfirm = await vscode.window.showInputBox({
+      prompt: '请再次输入新密码确认',
+      password: true,
+    });
+    if (newPassword !== newConfirm) {
+      vscode.window.showErrorMessage('两次密码不一致');
+      return;
+    }
+
+    const ok = await this.dataStore.changePassword(oldPassword, newPassword);
+    if (ok) {
+      vscode.window.showInformationMessage('密码已更新，数据已用新密码重新加密');
+    } else {
+      vscode.window.showErrorMessage('当前密码错误，密码未更改');
+    }
+    this.sendDataToWebview();
   }
 
   private getHtml(): string {
@@ -132,108 +174,66 @@ export class OverviewPanel {
       background: var(--vscode-editor-background);
       color: var(--vscode-editor-foreground);
     }
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid var(--vscode-panel-border);
-    }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--vscode-panel-border); }
     .header h1 { font-size: 24px; font-weight: 600; }
     .header .subtitle { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
     .header .actions button {
-      padding: 8px 16px;
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-left: 8px;
+      padding: 8px 16px; background: var(--vscode-button-background); color: var(--vscode-button-foreground);
+      border: none; border-radius: 4px; cursor: pointer; margin-left: 8px;
     }
     .header .actions button:hover { opacity: 0.9; }
-    .project-badge {
-      display: inline-block;
-      padding: 4px 12px;
-      background: var(--vscode-badge-background);
-      color: var(--vscode-badge-foreground);
-      border-radius: 12px;
-      font-size: 12px;
-      margin-bottom: 16px;
+    .project-selector {
+      display: flex; align-items: center; gap: 8px; margin-bottom: 16px;
     }
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 16px;
-      margin-bottom: 24px;
+    .project-selector select {
+      padding: 6px 32px 6px 10px;
+      background: var(--vscode-dropdown-background);
+      color: var(--vscode-dropdown-foreground);
+      border: 1px solid var(--vscode-dropdown-border);
+      border-radius: 4px; font-size: 13px; cursor: pointer;
+      appearance: none; -webkit-appearance: none;
     }
+    .project-selector .current-badge {
+      padding: 4px 12px; background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground); border-radius: 12px; font-size: 12px;
+    }
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
     .stat-card {
-      background: var(--vscode-editorWidget-background);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 8px;
-      padding: 16px;
+      background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px; padding: 16px;
     }
     .stat-card .label { font-size: 12px; color: var(--vscode-descriptionForeground); margin-bottom: 8px; }
     .stat-card .value { font-size: 24px; font-weight: 600; }
     .stat-card .cost { font-size: 14px; color: var(--vscode-textLink-foreground); margin-top: 4px; }
     .chart-container {
-      background: var(--vscode-editorWidget-background);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 8px;
-      padding: 16px;
-      margin-bottom: 24px;
+      background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px; padding: 16px; margin-bottom: 24px;
     }
     .chart-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
     .chart { width: 100%; height: 400px; }
     .tab-bar { display: flex; gap: 8px; margin-bottom: 16px; }
     .tab-bar button {
-      padding: 8px 16px;
-      background: var(--vscode-editorWidget-background);
-      color: var(--vscode-editor-foreground);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 4px;
-      cursor: pointer;
+      padding: 8px 16px; background: var(--vscode-editorWidget-background);
+      color: var(--vscode-editor-foreground); border: 1px solid var(--vscode-panel-border);
+      border-radius: 4px; cursor: pointer;
     }
-    .tab-bar button.active {
-      background: var(--vscode-button-background);
-      color: var(--vscode-button-foreground);
-      border-color: var(--vscode-button-background);
-    }
-    .type-breakdown {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-    }
+    .tab-bar button.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); border-color: var(--vscode-button-background); }
+    .type-breakdown { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
     .type-card {
-      background: var(--vscode-editorWidget-background);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 8px;
-      padding: 16px;
-      text-align: center;
+      background: var(--vscode-editorWidget-background); border: 1px solid var(--vscode-panel-border);
+      border-radius: 8px; padding: 16px; text-align: center;
     }
     .type-card .icon { font-size: 32px; margin-bottom: 8px; }
     .type-card .label { font-size: 14px; color: var(--vscode-descriptionForeground); }
     .type-card .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
     .type-card .cost { font-size: 13px; color: var(--vscode-textLink-foreground); margin-top: 2px; }
-    .all-projects { margin-top: 24px; }
-    .all-projects h3 { font-size: 14px; color: var(--vscode-descriptionForeground); margin-bottom: 12px; }
-    .project-row {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 8px 12px;
-      background: var(--vscode-editorWidget-background);
-      border: 1px solid var(--vscode-panel-border);
-      border-radius: 6px;
-      margin-bottom: 6px;
-    }
-    .project-row .name { font-weight: 500; }
-    .project-row .time { color: var(--vscode-textLink-foreground); }
     .storage-info { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--vscode-panel-border); }
   </style>
 </head>
 <body>
   <div class="header">
     <div>
-      <h1 id="title">WorkTime</h1>
+      <h1>WorkTime</h1>
       <div class="subtitle" id="storageInfo"></div>
     </div>
     <div class="actions">
@@ -241,29 +241,17 @@ export class OverviewPanel {
       <button id="btnResetPassword">重置密码</button>
     </div>
   </div>
-  <div class="project-badge" id="projectBadge">📁 --</div>
+
+  <div class="project-selector">
+    <select id="projectSelect"><option value="">加载中...</option></select>
+    <span class="current-badge" id="currentBadge" style="display:none">当前</span>
+  </div>
 
   <div class="stats-grid">
-    <div class="stat-card">
-      <div class="label">今日时间</div>
-      <div class="value" id="todayTime">0:00</div>
-      <div class="cost" id="todayCost">¥0</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">本周时间</div>
-      <div class="value" id="weekTime">0:00</div>
-      <div class="cost" id="weekCost">¥0</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">本月时间</div>
-      <div class="value" id="monthTime">0:00</div>
-      <div class="cost" id="monthCost">¥0</div>
-    </div>
-    <div class="stat-card">
-      <div class="label">总时间</div>
-      <div class="value" id="totalTime">0:00</div>
-      <div class="cost" id="totalCost">¥0</div>
-    </div>
+    <div class="stat-card"><div class="label">今日时间</div><div class="value" id="todayTime">0:00</div><div class="cost" id="todayCost">¥0</div></div>
+    <div class="stat-card"><div class="label">本周时间</div><div class="value" id="weekTime">0:00</div><div class="cost" id="weekCost">¥0</div></div>
+    <div class="stat-card"><div class="label">本月时间</div><div class="value" id="monthTime">0:00</div><div class="cost" id="monthCost">¥0</div></div>
+    <div class="stat-card"><div class="label">总时间</div><div class="value" id="totalTime">0:00</div><div class="cost" id="totalCost">¥0</div></div>
   </div>
 
   <div class="chart-container">
@@ -280,31 +268,12 @@ export class OverviewPanel {
   <div class="chart-container">
     <div class="chart-title">时间分布</div>
     <div class="type-breakdown">
-      <div class="type-card">
-        <div class="icon">✏️</div>
-        <div class="label">手动编辑</div>
-        <div class="value" id="manualTime">0:00</div>
-        <div class="cost" id="manualCost">¥0</div>
-      </div>
-      <div class="type-card">
-        <div class="icon">🤖</div>
-        <div class="label">Agent 修改</div>
-        <div class="value" id="agentTime">0:00</div>
-        <div class="cost" id="agentCost">¥0</div>
-      </div>
-      <div class="type-card">
-        <div class="icon">👁️</div>
-        <div class="label">文件查看</div>
-        <div class="value" id="viewTime">0:00</div>
-        <div class="cost" id="viewCost">¥0</div>
-      </div>
+      <div class="type-card"><div class="icon">✏️</div><div class="label">手动编辑</div><div class="value" id="manualTime">0:00</div><div class="cost" id="manualCost">¥0</div></div>
+      <div class="type-card"><div class="icon">🤖</div><div class="label">Agent 修改</div><div class="value" id="agentTime">0:00</div><div class="cost" id="agentCost">¥0</div></div>
+      <div class="type-card"><div class="icon">👁️</div><div class="label">文件查看</div><div class="value" id="viewTime">0:00</div><div class="cost" id="viewCost">¥0</div></div>
     </div>
   </div>
 
-  <div class="all-projects" id="allProjectsSection">
-    <h3>所有项目汇总</h3>
-    <div id="allProjectsList"></div>
-  </div>
   <div class="storage-info" id="storageInfoFooter"></div>
 
   <script src="${echartsCdn}"></script>

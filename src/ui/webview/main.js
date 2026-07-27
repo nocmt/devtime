@@ -5,6 +5,7 @@ const vscode = acquireVsCodeApi();
 let chart = null;
 let currentData = null;
 let currentRange = 'daily';
+let activeProjectId = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initChart();
@@ -17,6 +18,7 @@ window.addEventListener('message', (event) => {
   switch (message.type) {
     case 'updateData':
       currentData = message.data;
+      activeProjectId = message.data.activeProjectId;
       updateUI();
       break;
   }
@@ -46,27 +48,44 @@ function bindEvents() {
   document.getElementById('btnResetPassword')?.addEventListener('click', () => {
     vscode.postMessage({ type: 'resetPassword' });
   });
+  document.getElementById('projectSelect')?.addEventListener('change', (e) => {
+    vscode.postMessage({ type: 'switchProject', projectId: e.target.value });
+  });
 }
 
 function updateUI() {
   if (!currentData) return;
 
-  // Project name
-  document.getElementById('projectBadge').textContent = '📁 ' + (currentData.projectName || '--');
-
-  // Storage info
   if (currentData.storagePath) {
-    const shortPath = currentData.storagePath.length > 50
-      ? '...' + currentData.storagePath.slice(-47)
-      : currentData.storagePath;
-    document.getElementById('storageInfo').textContent = '数据: ' + shortPath;
-    document.getElementById('storageInfoFooter').textContent = '数据文件: ' + shortPath;
+    const sp = currentData.storagePath;
+    const short = sp.length > 50 ? '...' + sp.slice(-47) : sp;
+    el('storageInfo', '数据: ' + short);
+    el('storageInfoFooter', '数据文件: ' + short);
   }
 
+  updateProjectSelector();
   updateStatsCards();
   updateChart();
   updateTypeBreakdown();
-  updateAllProjects();
+}
+
+function updateProjectSelector() {
+  const projects = currentData.allProjects || [];
+  const select = document.getElementById('projectSelect');
+  const badge = document.getElementById('currentBadge');
+  if (!select || projects.length === 0) return;
+
+  const currentId = currentData.activeProjectId;
+
+  select.innerHTML = projects.map(p =>
+    `<option value="${p.id}" ${p.id === currentId ? 'selected' : ''}>${p.name} · ${formatTime(p.totalSeconds)}</option>`
+  ).join('');
+
+  // 标记"当前"
+  if (currentId) {
+    const isCurrent = select.value === currentId;
+    badge.style.display = isCurrent ? 'inline-block' : 'none';
+  }
 }
 
 function updateStatsCards() {
@@ -92,7 +111,6 @@ function updateStatsCards() {
 
   const fmt = formatTime;
   const cost = (s) => currency + (s / 3600 * rate).toFixed(2);
-
   el('todayTime', fmt(todayS)); el('todayCost', cost(todayS));
   el('weekTime', fmt(weekS)); el('weekCost', cost(weekS));
   el('monthTime', fmt(monthS)); el('monthCost', cost(monthS));
@@ -101,7 +119,6 @@ function updateStatsCards() {
 
 function updateChart() {
   if (!chart || !currentData || typeof echarts === 'undefined') return;
-
   const records = currentData.records || {};
   const now = new Date();
   let dates = [], title = '';
@@ -120,9 +137,8 @@ function updateChart() {
       }
       title = '每周统计'; break;
     case 'monthly':
-      for (let i = 11; i >= 0; i--) {
+      for (let i = 11; i >= 0; i--)
         dates.push(`${now.getFullYear()}-${String(now.getMonth() - i + 1).padStart(2, '0')}-01`);
-      }
       title = '每月统计'; break;
     case 'yearly':
       for (let i = 4; i >= 0; i--) dates.push(`${now.getFullYear() - i}-01-01`);
@@ -130,11 +146,7 @@ function updateChart() {
   }
 
   el('chartTitle', title);
-
-  const data = dates.map(d => {
-    const r = records[d];
-    return r ? (r.totalSeconds / 3600).toFixed(2) : 0;
-  });
+  const data = dates.map(d => { const r = records[d]; return r ? (r.totalSeconds / 3600).toFixed(2) : 0; });
 
   chart.setOption({
     backgroundColor: 'transparent',
@@ -144,12 +156,7 @@ function updateChart() {
     yAxis: { type: 'value', name: '小时', nameTextStyle: { color: '#999' }, axisLabel: { color: '#999' }, splitLine: { lineStyle: { color: '#333' } } },
     series: [{
       data, type: 'bar',
-      itemStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: '#5470c6' }, { offset: 1, color: '#91cc75' }
-        ]),
-        borderRadius: [4, 4, 0, 0]
-      }
+      itemStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: '#5470c6' }, { offset: 1, color: '#91cc75' }]), borderRadius: [4, 4, 0, 0] }
     }]
   }, true);
 }
@@ -159,41 +166,23 @@ function updateTypeBreakdown() {
   const rate = currentData.hourlyRate || 100;
   const currency = currentData.currency || '¥';
   let m = 0, a = 0, v = 0;
-
   Object.values(records).forEach(r => {
     if (!r.entries) return;
     r.entries.forEach(e => {
       if (e.type === 'manual_edit') m += e.duration || 0;
       else if (e.type === 'agent_edit') a += e.duration || 0;
-      else if (e.type === 'file_view') v += e.duration || 0;
+      else v += e.duration || 0;
     });
   });
-
-  const fmt = formatTime;
-  const cost = (s) => currency + (s / 3600 * rate).toFixed(2);
+  const fmt = formatTime, cost = (s) => currency + (s / 3600 * rate).toFixed(2);
   el('manualTime', fmt(m)); el('manualCost', cost(m));
   el('agentTime', fmt(a)); el('agentCost', cost(a));
   el('viewTime', fmt(v)); el('viewCost', cost(v));
 }
 
-function updateAllProjects() {
-  const projects = currentData.allProjects || [];
-  const list = document.getElementById('allProjectsList');
-  if (!list || projects.length === 0) return;
-
-  list.innerHTML = projects.map(p => `
-    <div class="project-row">
-      <span class="name">📁 ${p.name}</span>
-      <span class="time">${formatTime(p.totalSeconds)}</span>
-    </div>
-  `).join('');
-}
-
 function el(id, text) { const e = document.getElementById(id); if (e) e.textContent = text; }
-
 function formatTime(s) {
   if (!s || s === 0) return '0:00';
-  const h = Math.floor(s / 3600);
-  const m = Math.floor((s % 3600) / 60);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
   return h > 0 ? `${h}:${m.toString().padStart(2, '0')}` : `${m}分`;
 }

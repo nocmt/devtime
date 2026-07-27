@@ -136,19 +136,48 @@ export class DataStore {
   }
 
   /**
-   * 设置密码并保存到 SecretStorage
+   * 首次设置密码（初始化场景）
    */
   async setPassword(password: string): Promise<void> {
     this.password = password;
     await this.secretStorage.store(SECRET_KEY, password);
-
     if (fs.existsSync(this.dataPath)) {
       await this.saveData();
     } else {
-      // 新密码，创建初始数据
       this.ensureProject();
       await this.saveData();
     }
+  }
+
+  /**
+   * 正常换密码：先验证旧密码，数据原封不动重新加密
+   * @returns true 成功，false 旧密码错误
+   */
+  async changePassword(oldPassword: string, newPassword: string): Promise<boolean> {
+    if (fs.existsSync(this.dataPath)) {
+      try {
+        const raw = fs.readFileSync(this.dataPath, 'utf-8');
+        const encrypted: EncryptedData = JSON.parse(raw);
+        await decrypt(encrypted, oldPassword);
+      } catch {
+        return false;
+      }
+    }
+    this.password = newPassword;
+    await this.secretStorage.store(SECRET_KEY, newPassword);
+    await this.saveData();
+    return true;
+  }
+
+  /**
+   * 清空数据并设新密码（密码错误、文件不属于当前用户时使用）
+   */
+  async resetData(newPassword: string): Promise<void> {
+    this.password = newPassword;
+    await this.secretStorage.store(SECRET_KEY, newPassword);
+    this.data = { version: DATA_VERSION, projects: {} };
+    this.ensureProject();
+    await this.saveData();
   }
 
   /**
@@ -261,6 +290,15 @@ export class DataStore {
   }
 
   /**
+   * 获取指定项目的数据（用于切换查看其他项目）
+   */
+  getProjectData(projectId: string): { name: string; records: Record<string, DailyRecord> } | null {
+    const p = this.data.projects[projectId];
+    if (!p) return null;
+    return { name: p.name, records: p.records };
+  }
+
+  /**
    * 获取所有项目汇总数据
    */
   getAllProjectsSummary(): Array<{ id: string; name: string; totalSeconds: number }> {
@@ -269,6 +307,27 @@ export class DataStore {
       name: p.name,
       totalSeconds: Object.values(p.records).reduce((sum, r) => sum + r.totalSeconds, 0),
     })).sort((a, b) => b.totalSeconds - a.totalSeconds);
+  }
+
+  /**
+   * 尝试用给定密码解密数据（密码重试用）
+   * @returns true 解密成功，false 密码错误
+   */
+  async tryDecrypt(password: string): Promise<boolean> {
+    if (!fs.existsSync(this.dataPath)) return true;
+    try {
+      const raw = fs.readFileSync(this.dataPath, 'utf-8');
+      const encrypted: EncryptedData = JSON.parse(raw);
+      await decrypt(encrypted, password);
+      // 成功，保存到 SecretStorage
+      this.password = password;
+      await this.secretStorage.store(SECRET_KEY, password);
+      await this.loadData();
+      this.ensureProject();
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   hasPassword(): boolean {

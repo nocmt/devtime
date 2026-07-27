@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { i18n } from './i18n/i18n';
 import { DataStore } from './storage/dataStore';
 import { TimeTracker } from './tracker/timeTracker';
@@ -38,20 +39,75 @@ export async function activate(context: vscode.ExtensionContext) {
   // 检查密码
   const hasPassword = await dataStore.init();
   if (!hasPassword) {
-    const action = await vscode.window.showInformationMessage(
-      i18n.t('overview.decryptError'),
-      i18n.t('overview.decryptError.action')
-    );
+    const hasDataFile = fs.existsSync(dataStore.getStoragePath());
 
-    if (action === i18n.t('overview.decryptError.action')) {
-      await handleSetPassword(dataStore);
-      const retryInit = await dataStore.init();
-      if (!retryInit) {
-        vscode.window.showErrorMessage('WorkTime: Failed to initialize data storage');
+    // 数据文件不存在 → 首次使用，直接设密码
+    if (!hasDataFile) {
+      const password = await vscode.window.showInputBox({
+        prompt: '首次使用，请设置 WorkTime 密码（用于加密数据）',
+        password: true,
+      });
+      if (!password) return;
+      const confirm = await vscode.window.showInputBox({
+        prompt: '请再次输入密码确认',
+        password: true,
+      });
+      if (password !== confirm) {
+        vscode.window.showErrorMessage('两次密码不一致');
         return;
       }
+      await dataStore.setPassword(password);
+      await dataStore.init();
+      vscode.window.showInformationMessage('密码设置成功');
     } else {
-      return;
+      // 数据文件存在但密码不对 → 优先让用户重试
+      let retry = true;
+      while (retry) {
+        const password = await vscode.window.showInputBox({
+          prompt: '请输入 WorkTime 密码',
+          password: true,
+        });
+        if (!password) break;
+
+        const ok = await dataStore.tryDecrypt(password);
+        if (ok) {
+          vscode.window.showInformationMessage('密码正确，数据已加载');
+          break;
+        }
+        const action = await vscode.window.showErrorMessage(
+          '密码错误，请重试或重新生成数据文件',
+          '重试',
+          '重新生成'
+        );
+        if (action === '重新生成') {
+          const wipe = await vscode.window.showWarningMessage(
+            '将清空数据文件并重新生成，原数据将丢失。确定？',
+            { modal: true },
+            '清空并重新生成',
+            '取消'
+          );
+          if (wipe === '清空并重新生成') {
+            const newPw = await vscode.window.showInputBox({
+              prompt: '请输入新密码',
+              password: true,
+            });
+            if (!newPw) return;
+            const newConfirm = await vscode.window.showInputBox({
+              prompt: '请再次输入新密码确认',
+              password: true,
+            });
+            if (newPw !== newConfirm) {
+              vscode.window.showErrorMessage('两次密码不一致');
+              return;
+            }
+            await dataStore.resetData(newPw);
+            await dataStore.init();
+            vscode.window.showInformationMessage('数据已重新生成，密码设置成功');
+            break;
+          }
+        }
+        // '重试' → 循环继续
+      }
     }
   }
 
@@ -68,11 +124,15 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
 
     vscode.commands.registerCommand('worktime.setPassword', async () => {
-      await handleSetPassword(dataStore);
+      // 首次设置/忘记密码后重设
+      await promptNewPassword(dataStore);
+      overviewPanel?.refresh();
     }),
 
     vscode.commands.registerCommand('worktime.resetPassword', async () => {
-      await handleResetPassword(dataStore);
+      // 正常换密码：验证旧密码 → 换新密码
+      await handleChangePassword(dataStore);
+      overviewPanel?.refresh();
     }),
 
     vscode.commands.registerCommand('worktime.startTracking', () => {
@@ -113,36 +173,52 @@ export function deactivate() {
   overviewPanel?.dispose();
 }
 
-async function handleSetPassword(dataStore: DataStore): Promise<void> {
+async function promptNewPassword(dataStore: DataStore): Promise<void> {
   const password = await vscode.window.showInputBox({
-    prompt: i18n.t('overview.setPassword.prompt'),
+    prompt: '请输入新密码（用于加密数据）',
     password: true,
   });
-
   if (!password) return;
 
   const confirm = await vscode.window.showInputBox({
-    prompt: i18n.t('overview.setPassword.confirm'),
+    prompt: '请再次输入密码确认',
     password: true,
   });
-
   if (password !== confirm) {
-    vscode.window.showErrorMessage(i18n.t('overview.setPassword.mismatch'));
+    vscode.window.showErrorMessage('两次密码不一致');
     return;
   }
 
   await dataStore.setPassword(password);
-  vscode.window.showInformationMessage(i18n.t('overview.setPassword.success'));
+  vscode.window.showInformationMessage('密码设置成功');
 }
 
-async function handleResetPassword(dataStore: DataStore): Promise<void> {
-  const confirm = await vscode.window.showWarningMessage(
-    i18n.t('overview.resetPassword.confirm'),
-    { modal: true },
-    'OK'
-  );
+async function handleChangePassword(dataStore: DataStore): Promise<void> {
+  const oldPassword = await vscode.window.showInputBox({
+    prompt: '请输入当前密码',
+    password: true,
+  });
+  if (!oldPassword) return;
 
-  if (confirm !== 'OK') return;
+  const newPassword = await vscode.window.showInputBox({
+    prompt: '请输入新密码',
+    password: true,
+  });
+  if (!newPassword) return;
 
-  await handleSetPassword(dataStore);
+  const newConfirm = await vscode.window.showInputBox({
+    prompt: '请再次输入新密码确认',
+    password: true,
+  });
+  if (newPassword !== newConfirm) {
+    vscode.window.showErrorMessage('两次密码不一致');
+    return;
+  }
+
+  const ok = await dataStore.changePassword(oldPassword, newPassword);
+  if (ok) {
+    vscode.window.showInformationMessage('密码已更新，数据已用新密码重新加密');
+  } else {
+    vscode.window.showErrorMessage('当前密码错误，密码未更改');
+  }
 }
