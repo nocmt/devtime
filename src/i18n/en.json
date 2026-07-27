@@ -8,6 +8,7 @@
   "config.idleTimeout": "Idle timeout in seconds. Tracking pauses after this duration of inactivity",
   "config.currency": "Currency symbol",
   "config.locale": "Interface language",
+  "config.storagePath": "Storage path (leave empty for ~/.worktime/, use iCloud/Dropbox folder for cross-device sync)",
   "statusBar.tracking": "$(clock) WorkTime: {time}",
   "statusBar.idle": "$(clock) WorkTime: Idle",
   "statusBar.stopped": "$(clock) WorkTime: Stopped",
@@ -31,5 +32,6 @@
   "overview.setPassword.success": "Password set successfully",
   "overview.resetPassword.confirm": "Reset password? This will re-encrypt data with the new password",
   "overview.decryptError": "WorkTime password incorrect. You can regenerate the statistics file with your current computer's password.",
-  "overview.decryptError.action": "Reset Password"
+  "overview.decryptError.action": "Reset Password",
+  "overview.currentProject": "Current Project"
 }

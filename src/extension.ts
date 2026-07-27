@@ -23,8 +23,8 @@ export async function activate(context: vscode.ExtensionContext) {
   // 初始化配置
   const config = getConfig();
 
-  // 初始化数据存储
-  const dataStore = new DataStore(workspaceFolder, context.secrets);
+  // 初始化数据存储（传入自定义路径）
+  const dataStore = new DataStore(workspaceFolder, context.secrets, config.storagePath);
 
   // 检查密码
   const hasPassword = await dataStore.init();
@@ -42,7 +42,6 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
     } else {
-      // User dismissed, can't track without password
       return;
     }
   }
@@ -83,7 +82,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // 监听配置变化 - 更新概览面板
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration('worktime')) {
@@ -95,7 +93,10 @@ export async function activate(context: vscode.ExtensionContext) {
   // 自动开始追踪
   tracker.start();
 
-  vscode.window.showInformationMessage('WorkTime: 计时已开始');
+  // 提示存储位置
+  vscode.window.showInformationMessage(
+    `WorkTime: 计时已开始 | 数据存储: ${dataStore.getStoragePath()}`
+  );
 }
 
 export function deactivate() {

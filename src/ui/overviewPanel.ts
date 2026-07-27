@@ -2,7 +2,6 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { DataStore } from '../storage/dataStore';
-import { i18n } from '../i18n/i18n';
 
 export class OverviewPanel {
   private panel: vscode.WebviewPanel | undefined;
@@ -22,7 +21,7 @@ export class OverviewPanel {
 
     this.panel = vscode.window.createWebviewPanel(
       'worktimeOverview',
-      i18n.t('overview.title'),
+      'WorkTime',
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -34,7 +33,6 @@ export class OverviewPanel {
 
     this.panel.webview.html = this.getHtml();
 
-    // 处理来自 webview 的消息
     this.panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.type) {
         case 'getData':
@@ -53,7 +51,6 @@ export class OverviewPanel {
       this.panel = undefined;
     });
 
-    // 初始发送数据
     this.sendDataToWebview();
   }
 
@@ -67,67 +64,56 @@ export class OverviewPanel {
     const config = vscode.workspace.getConfiguration('worktime');
     const hourlyRate = config.get<number>('hourlyRate', 100);
     const currency = config.get<string>('currency', '¥');
-
-    const allData = this.dataStore.getAllData();
+    const projectData = this.dataStore.getCurrentProjectData();
+    const allProjects = this.dataStore.getAllProjectsSummary();
 
     this.panel.webview.postMessage({
       type: 'updateData',
       data: {
-        records: allData.records,
+        projectName: projectData.name,
+        records: projectData.records,
+        allProjects,
         hourlyRate,
         currency,
+        storagePath: this.dataStore.getStoragePath(),
       }
     });
   }
 
   private async handleSetPassword(): Promise<void> {
     const password = await vscode.window.showInputBox({
-      prompt: i18n.t('overview.setPassword.prompt'),
+      prompt: '请输入 WorkTime 密码（用于加密数据）',
       password: true,
     });
-
     if (!password) return;
 
     const confirm = await vscode.window.showInputBox({
-      prompt: i18n.t('overview.setPassword.confirm'),
+      prompt: '请再次输入密码确认',
       password: true,
     });
-
     if (password !== confirm) {
-      vscode.window.showErrorMessage(i18n.t('overview.setPassword.mismatch'));
+      vscode.window.showErrorMessage('两次密码不一致');
       return;
     }
 
     await this.dataStore.setPassword(password);
-    vscode.window.showInformationMessage(i18n.t('overview.setPassword.success'));
+    vscode.window.showInformationMessage('密码设置成功');
     this.sendDataToWebview();
   }
 
   private async handleResetPassword(): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
-      i18n.t('overview.resetPassword.confirm'),
+      '确认重置密码？这将使用新密码重新加密数据',
       { modal: true },
       'OK'
     );
-
     if (confirm !== 'OK') return;
-
     await this.handleSetPassword();
   }
 
   private getHtml(): string {
     const webviewDir = path.join(this.extensionPath, 'src', 'ui', 'webview');
-
-    // ECharts CDN
     const echartsCdn = 'https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js';
-
-    // 检查本地是否有 ECharts（离线回退）
-    const localEcharts = path.join(webviewDir, 'echarts.min.js');
-    let echartsUri: string;
-    if (fs.existsSync(localEcharts)) {
-      echartsUri = this.panel!.webview.asWebviewUri(vscode.Uri.file(localEcharts)).toString();
-    }
-
     const jsPath = path.join(webviewDir, 'main.js');
     const scriptUri = this.panel!.webview.asWebviewUri(vscode.Uri.file(jsPath)).toString();
 
@@ -150,11 +136,12 @@ export class OverviewPanel {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 24px;
-      padding-bottom: 16px;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
       border-bottom: 1px solid var(--vscode-panel-border);
     }
     .header h1 { font-size: 24px; font-weight: 600; }
+    .header .subtitle { font-size: 12px; color: var(--vscode-descriptionForeground); margin-top: 4px; }
     .header .actions button {
       padding: 8px 16px;
       background: var(--vscode-button-background);
@@ -165,6 +152,15 @@ export class OverviewPanel {
       margin-left: 8px;
     }
     .header .actions button:hover { opacity: 0.9; }
+    .project-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      background: var(--vscode-badge-background);
+      color: var(--vscode-badge-foreground);
+      border-radius: 12px;
+      font-size: 12px;
+      margin-bottom: 16px;
+    }
     .stats-grid {
       display: grid;
       grid-template-columns: repeat(4, 1fr);
@@ -219,35 +215,52 @@ export class OverviewPanel {
     .type-card .label { font-size: 14px; color: var(--vscode-descriptionForeground); }
     .type-card .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
     .type-card .cost { font-size: 13px; color: var(--vscode-textLink-foreground); margin-top: 2px; }
+    .all-projects { margin-top: 24px; }
+    .all-projects h3 { font-size: 14px; color: var(--vscode-descriptionForeground); margin-bottom: 12px; }
+    .project-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 12px;
+      background: var(--vscode-editorWidget-background);
+      border: 1px solid var(--vscode-panel-border);
+      border-radius: 6px;
+      margin-bottom: 6px;
+    }
+    .project-row .name { font-weight: 500; }
+    .project-row .time { color: var(--vscode-textLink-foreground); }
+    .storage-info { font-size: 11px; color: var(--vscode-descriptionForeground); margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--vscode-panel-border); }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1 id="title">WorkTime</h1>
+    <div>
+      <h1 id="title">WorkTime</h1>
+      <div class="subtitle" id="storageInfo"></div>
+    </div>
     <div class="actions">
       <button id="btnSetPassword">设置密码</button>
       <button id="btnResetPassword">重置密码</button>
     </div>
   </div>
+  <div class="project-badge" id="projectBadge">📁 --</div>
 
   <div class="stats-grid">
     <div class="stat-card">
-      <div class="label" id="labelTodayTime">今日时间</div>
+      <div class="label">今日时间</div>
       <div class="value" id="todayTime">0:00</div>
       <div class="cost" id="todayCost">¥0</div>
     </div>
     <div class="stat-card">
-      <div class="label" id="labelWeekTime">本周时间</div>
+      <div class="label">本周时间</div>
       <div class="value" id="weekTime">0:00</div>
       <div class="cost" id="weekCost">¥0</div>
     </div>
     <div class="stat-card">
-      <div class="label" id="labelMonthTime">本月时间</div>
+      <div class="label">本月时间</div>
       <div class="value" id="monthTime">0:00</div>
       <div class="cost" id="monthCost">¥0</div>
     </div>
     <div class="stat-card">
-      <div class="label" id="labelTotalTime">总时间</div>
+      <div class="label">总时间</div>
       <div class="value" id="totalTime">0:00</div>
       <div class="cost" id="totalCost">¥0</div>
     </div>
@@ -287,6 +300,12 @@ export class OverviewPanel {
       </div>
     </div>
   </div>
+
+  <div class="all-projects" id="allProjectsSection">
+    <h3>所有项目汇总</h3>
+    <div id="allProjectsList"></div>
+  </div>
+  <div class="storage-info" id="storageInfoFooter"></div>
 
   <script src="${echartsCdn}"></script>
   <script src="${scriptUri}"></script>

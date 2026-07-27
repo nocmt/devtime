@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import { encrypt, decrypt, EncryptedData } from './crypto';
 
 export interface TimeEntry {
@@ -17,12 +18,18 @@ export interface DailyRecord {
   totalSeconds: number;
 }
 
-export interface WorkTimeData {
-  version: number;
+export interface ProjectData {
+  name: string;         // 项目名（文件夹名）
+  displayPath: string;  // 最后一次打开时的完整路径
   records: Record<string, DailyRecord>; // key = YYYY-MM-DD
 }
 
-const DATA_VERSION = 1;
+export interface WorkTimeData {
+  version: number;
+  projects: Record<string, ProjectData>; // key = projectId (文件夹名)
+}
+
+const DATA_VERSION = 2;
 const SECRET_KEY = 'worktime.password';
 
 export class DataStore {
@@ -30,15 +37,52 @@ export class DataStore {
   private dataPath: string;
   private secretStorage: vscode.SecretStorage;
   private password: string | null = null;
+  private currentProjectId: string | null = null;
+  private currentProjectName: string;
+  private currentProjectPath: string;
 
-  constructor(workspaceFolder: string, secretStorage: vscode.SecretStorage) {
+  constructor(workspaceFolder: string, secretStorage: vscode.SecretStorage, storagePath?: string) {
     this.secretStorage = secretStorage;
-    this.dataPath = path.join(workspaceFolder, '.worktime', 'data.wt');
-    this.data = { version: DATA_VERSION, records: {} };
+    this.currentProjectName = path.basename(workspaceFolder);
+    this.currentProjectPath = workspaceFolder;
+    this.currentProjectId = this.sanitizeProjectId(this.currentProjectName);
+
+    // 决定存储路径
+    if (storagePath && storagePath.trim()) {
+      // 用户自定义路径
+      const dir = storagePath.trim();
+      this.dataPath = path.join(dir, 'worktime-data.wt');
+    } else {
+      // 默认：用户 home 目录下的 .worktime/
+      this.dataPath = path.join(os.homedir(), '.worktime', 'worktime-data.wt');
+    }
+
+    this.data = { version: DATA_VERSION, projects: {} };
   }
 
   /**
-   * 初始化：确保 .worktime 目录存在，尝试加载数据
+   * 清理项目 ID（避免路径中特殊字符）
+   */
+  private sanitizeProjectId(name: string): string {
+    return name.replace(/[^a-zA-Z0-9\u4e00-\u9fff_-]/g, '_').toLowerCase();
+  }
+
+  /**
+   * 获取当前项目 ID
+   */
+  getProjectId(): string {
+    return this.currentProjectId!;
+  }
+
+  /**
+   * 获取当前项目名
+   */
+  getProjectName(): string {
+    return this.currentProjectName;
+  }
+
+  /**
+   * 初始化：确保目录存在，尝试加载数据
    */
   async init(): Promise<boolean> {
     const dir = path.dirname(this.dataPath);
@@ -50,7 +94,6 @@ export class DataStore {
     this.password = (await this.secretStorage.get(SECRET_KEY)) || null;
 
     if (!this.password) {
-      // 首次使用，需要设置密码
       return false;
     }
 
@@ -58,18 +101,38 @@ export class DataStore {
     if (fs.existsSync(this.dataPath)) {
       try {
         await this.loadData();
+        // 确保当前项目在数据中
+        this.ensureProject();
         return true;
       } catch (e) {
         if ((e as Error).message === 'DECRYPT_FAILED') {
-          // 密码错误
           return false;
         }
         throw e;
       }
     }
 
-    // 数据文件不存在，正常（新项目）
+    // 数据文件不存在，新用户
+    this.ensureProject();
     return true;
+  }
+
+  /**
+   * 确保当前项目存在于数据中
+   */
+  private ensureProject(): void {
+    if (!this.currentProjectId) return;
+
+    if (!this.data.projects[this.currentProjectId]) {
+      this.data.projects[this.currentProjectId] = {
+        name: this.currentProjectName,
+        displayPath: this.currentProjectPath,
+        records: {},
+      };
+    } else {
+      // 更新 displayPath
+      this.data.projects[this.currentProjectId].displayPath = this.currentProjectPath;
+    }
   }
 
   /**
@@ -79,8 +142,11 @@ export class DataStore {
     this.password = password;
     await this.secretStorage.store(SECRET_KEY, password);
 
-    // 如果已有数据，用新密码重新加密
     if (fs.existsSync(this.dataPath)) {
+      await this.saveData();
+    } else {
+      // 新密码，创建初始数据
+      this.ensureProject();
       await this.saveData();
     }
   }
@@ -94,7 +160,26 @@ export class DataStore {
     const raw = fs.readFileSync(this.dataPath, 'utf-8');
     const encrypted: EncryptedData = JSON.parse(raw);
     const json = await decrypt(encrypted, this.password);
-    this.data = JSON.parse(json);
+    const loaded = JSON.parse(json);
+
+    // 兼容 v1 数据格式（升级迁移）
+    if (loaded.version === 1 && loaded.records) {
+      // 旧格式：单个项目的 records，迁移到新格式
+      const oldName = this.currentProjectName;
+      this.data = {
+        version: DATA_VERSION,
+        projects: {
+          [this.sanitizeProjectId(oldName)]: {
+            name: oldName,
+            displayPath: this.currentProjectPath,
+            records: loaded.records,
+          }
+        }
+      };
+      await this.saveData();
+    } else {
+      this.data = loaded;
+    }
   }
 
   /**
@@ -112,34 +197,42 @@ export class DataStore {
    * 添加时间条目
    */
   async addEntry(entry: TimeEntry): Promise<void> {
-    const today = new Date().toISOString().split('T')[0];
+    if (!this.currentProjectId) return;
+    this.ensureProject();
 
-    if (!this.data.records[today]) {
-      this.data.records[today] = {
+    const today = new Date().toISOString().split('T')[0];
+    const project = this.data.projects[this.currentProjectId];
+
+    if (!project.records[today]) {
+      project.records[today] = {
         date: today,
         entries: [],
         totalSeconds: 0,
       };
     }
 
-    this.data.records[today].entries.push(entry);
-    this.data.records[today].totalSeconds += entry.duration;
+    project.records[today].entries.push(entry);
+    project.records[today].totalSeconds += entry.duration;
 
     await this.saveData();
   }
 
   /**
-   * 获取指定日期范围的记录
+   * 获取当前项目的指定日期范围记录
    */
   getRecords(startDate: string, endDate: string): DailyRecord[] {
+    if (!this.currentProjectId) return [];
+    const project = this.data.projects[this.currentProjectId];
+    if (!project) return [];
+
     const records: DailyRecord[] = [];
     const current = new Date(startDate);
     const end = new Date(endDate);
 
     while (current <= end) {
       const dateStr = current.toISOString().split('T')[0];
-      if (this.data.records[dateStr]) {
-        records.push(this.data.records[dateStr]);
+      if (project.records[dateStr]) {
+        records.push(project.records[dateStr]);
       }
       current.setDate(current.getDate() + 1);
     }
@@ -148,21 +241,44 @@ export class DataStore {
   }
 
   /**
-   * 获取今日记录
+   * 获取当前项目今日记录
    */
   getTodayRecord(): DailyRecord | undefined {
+    if (!this.currentProjectId) return undefined;
     const today = new Date().toISOString().split('T')[0];
-    return this.data.records[today];
+    return this.data.projects[this.currentProjectId]?.records[today];
   }
 
   /**
-   * 获取所有数据（用于概览页面）
+   * 获取当前项目的所有数据
    */
-  getAllData(): WorkTimeData {
-    return this.data;
+  getCurrentProjectData(): { name: string; records: Record<string, DailyRecord> } {
+    if (!this.currentProjectId || !this.data.projects[this.currentProjectId]) {
+      return { name: this.currentProjectName, records: {} };
+    }
+    const p = this.data.projects[this.currentProjectId];
+    return { name: p.name, records: p.records };
+  }
+
+  /**
+   * 获取所有项目汇总数据
+   */
+  getAllProjectsSummary(): Array<{ id: string; name: string; totalSeconds: number }> {
+    return Object.entries(this.data.projects).map(([id, p]) => ({
+      id,
+      name: p.name,
+      totalSeconds: Object.values(p.records).reduce((sum, r) => sum + r.totalSeconds, 0),
+    })).sort((a, b) => b.totalSeconds - a.totalSeconds);
   }
 
   hasPassword(): boolean {
     return this.password !== null;
+  }
+
+  /**
+   * 获取存储文件路径（用于提示用户）
+   */
+  getStoragePath(): string {
+    return this.dataPath;
   }
 }

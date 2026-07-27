@@ -5,6 +5,7 @@ export interface WorkTimeConfig {
   idleTimeout: number;
   currency: string;
   locale: string;
+  storagePath: string;
 }
 
 export function getConfig(): WorkTimeConfig {
@@ -14,6 +15,7 @@ export function getConfig(): WorkTimeConfig {
     idleTimeout: config.get<number>('idleTimeout', 300),
     currency: config.get<string>('currency', '¥'),
     locale: config.get<string>('locale', 'zh-CN'),
+    storagePath: config.get<string>('storagePath', ''),
   };
 }
 
