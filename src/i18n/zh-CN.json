@@ -3,7 +3,7 @@
   "config.idleTimeout": "空闲超时时间（秒），超过此时间不操作将暂停计时",
   "config.currency": "货币符号",
   "config.locale": "界面语言",
-  "config.storagePath": "自定义数据存储目录（留空使用默认 ~/devtime/；指定目录时会在其中创建 devtime 子目录存放数据）",
+  "config.storagePath": "自定义数据存储目录（留空使用默认 ~/Library/devtime/；指定目录时会在其中创建 devtime 子目录存放数据）",
   "config.ignoredProjects": "忽略的项目文件夹名列表（不统计这些项目的时间）",
   "statusBar.tracking": "$(clock) DevTime: {time}",
   "statusBar.idle": "$(clock) DevTime: 空闲中",
