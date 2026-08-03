@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { DataStore } from '../storage/dataStore';
 
 export class OverviewPanel {
@@ -15,7 +14,7 @@ export class OverviewPanel {
   }
 
   show(): void {
-    if (this.panel) { this.panel.reveal(); this.sendDataToWebview(); return; }
+    if (this.panel) { this.panel.reveal(); void this.sendDataToWebview(); return; }
 
     this.panel = vscode.window.createWebviewPanel('devtimeOverview', 'DevTime', vscode.ViewColumn.One, {
       enableScripts: true,
@@ -26,27 +25,27 @@ export class OverviewPanel {
 
     this.panel.webview.onDidReceiveMessage(async (message) => {
       switch (message.type) {
-        case 'getData': this.sendDataToWebview(); break;
-        case 'switchProject': this.selectedProjectId = message.projectId; this.sendDataToWebview(); break;
+        case 'getData': void this.sendDataToWebview(); break;
+        case 'switchProject': this.selectedProjectId = message.projectId; void this.sendDataToWebview(); break;
         case 'openSettings': vscode.commands.executeCommand('workbench.action.openSettings', 'devtime'); break;
       }
     });
 
     this.panel.onDidDispose(() => { this.panel = undefined; });
-    this.sendDataToWebview();
+    void this.sendDataToWebview();
   }
 
-  refresh(): void { this.sendDataToWebview(); }
+  refresh(): void { void this.sendDataToWebview(); }
 
-  private sendDataToWebview(): void {
+  private async sendDataToWebview(): Promise<void> {
     if (!this.panel) return;
     const config = vscode.workspace.getConfiguration('devtime');
     const hourlyRate = config.get<number>('hourlyRate', 100);
     const currency = config.get<string>('currency', '¥');
-    const allProjects = this.dataStore.getAllProjectsSummary();
+    const allProjects = await this.dataStore.getAllProjectsSummary();
     const activeId = this.selectedProjectId || this.dataStore.getProjectId();
     let records: Record<string, any> = {}, projectName = '';
-    const pd = this.selectedProjectId ? this.dataStore.getProjectData(this.selectedProjectId) : this.dataStore.getCurrentProjectData();
+    const pd = this.selectedProjectId ? await this.dataStore.getProjectData(this.selectedProjectId) : this.dataStore.getCurrentProjectData();
     if (pd) { records = pd.records; projectName = pd.name; }
 
     this.panel.webview.postMessage({
