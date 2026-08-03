@@ -2,3 +2,6 @@ node_modules/
 out/
 *.vsix
 .vscode/launch.json
+
+# pnpm（本项目使用 npm）
+pnpm-lock.yaml
