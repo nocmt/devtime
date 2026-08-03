@@ -33,7 +33,7 @@ export class I18n {
 
     // 加载用户自定义翻译（覆盖内置）
     if (workspaceFolder) {
-      const userLocalePath = path.join(workspaceFolder, '.devtime', 'locales', `${locale}.json`);
+      const userLocalePath = path.join(workspaceFolder, 'devtime', 'locales', `${locale}.json`);
       if (fs.existsSync(userLocalePath)) {
         const userMessages = this.loadLocale(userLocalePath);
         this.messages = { ...this.messages, ...userMessages };

@@ -70,8 +70,8 @@ export class DataStore {
 
   /**
    * 解析数据根目录：
-   * - 默认：~/.devtime
-   * - 自定义目录：若所选目录名本身就是 .devtime 则直接用；否则在其中创建 .devtime 子目录
+   * - 默认：~/devtime（不用点开头目录，避免云盘同步忽略隐藏文件）
+   * - 自定义目录：若所选目录名本身就是 devtime 则直接用；否则在其中创建 devtime 子目录
    * - Windows 上检测到 Unix/Mac 风格绝对路径（如 /Users/xxx）时视为无效配置，回退默认
    */
   private resolveDataRoot(): string {
@@ -79,12 +79,37 @@ export class DataStore {
       const raw = this.configuredStoragePath.trim();
       if (process.platform === 'win32' && raw.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(raw)) {
         this.fallbackReason = `存储路径 "${raw}" 不是 Windows 路径（可能是从 Mac/Linux 同步的配置）`;
-        return path.join(os.homedir(), '.devtime');
+        return path.join(os.homedir(), 'devtime');
       }
       const p = path.resolve(raw);
+      return path.basename(p) === 'devtime' ? p : path.join(p, 'devtime');
+    }
+    return path.join(os.homedir(), 'devtime');
+  }
+
+  /**
+   * 旧版（v3 之前）数据根目录：~/.devtime 或 <自定义目录>/.devtime
+   * 用于升级时把已有数据自动迁移到新目录 devtime
+   */
+  private legacyDataRoot(): string {
+    if (this.configuredStoragePath && this.configuredStoragePath.trim()) {
+      const p = path.resolve(this.configuredStoragePath.trim());
       return path.basename(p) === '.devtime' ? p : path.join(p, '.devtime');
     }
     return path.join(os.homedir(), '.devtime');
+  }
+
+  /** 新目录不存在且旧 .devtime 目录存在时，自动迁移（rename），避免升级丢数据 */
+  private async migrateOldDataRootIfNeeded(): Promise<void> {
+    if (await this.fileExists(this.dataRoot)) return;
+    const old = this.legacyDataRoot();
+    if (old === this.dataRoot) return;
+    if (!await this.fileExists(old)) return;
+    try {
+      await fsp.rename(old, this.dataRoot);
+    } catch (e) {
+      console.error(`[DevTime] 迁移旧数据目录 ${old} → ${this.dataRoot} 失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   private applyDataRoot(root: string): void {
@@ -125,6 +150,9 @@ export class DataStore {
       this.fallbackUsed = true;
     }
 
+    // 旧版 .devtime 目录升级迁移（新目录不存在时自动 rename）
+    await this.migrateOldDataRootIfNeeded();
+
     // 创建目录；配置路径不可用（权限/网络盘等）时回退默认目录，避免激活失败
     try {
       await fsp.mkdir(this.dataRoot, { recursive: true });
@@ -134,7 +162,7 @@ export class DataStore {
         this.fallbackReason = `无法创建存储目录 ${this.dataRoot}: ${e instanceof Error ? e.message : String(e)}`;
       }
       this.fallbackUsed = true;
-      this.applyDataRoot(path.join(os.homedir(), '.devtime'));
+      this.applyDataRoot(path.join(os.homedir(), 'devtime'));
       await fsp.mkdir(this.dataRoot, { recursive: true });
       await fsp.mkdir(this.projectsDir, { recursive: true });
     }
@@ -154,9 +182,9 @@ export class DataStore {
   private async migrateLegacyIfNeeded(): Promise<void> {
     let legacyPath = path.join(this.dataRoot, OLD_DATA_FILE);
     if (!await this.fileExists(legacyPath)) {
-      // 自定义目录场景下，旧文件可能位于所选目录（dataRoot 的父目录）而非 .devtime 子目录内
+      // 自定义目录场景下，旧文件可能位于所选目录（dataRoot 的父目录）而非 devtime 子目录内
       const alt = path.join(path.dirname(this.dataRoot), OLD_DATA_FILE);
-      if (path.basename(this.dataRoot) === '.devtime' && await this.fileExists(alt)) {
+      if (path.basename(this.dataRoot) === 'devtime' && await this.fileExists(alt)) {
         legacyPath = alt;
       } else {
         return;
