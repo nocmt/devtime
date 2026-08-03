@@ -14,7 +14,7 @@ function bindEvents() {
 }
 function updateUI() {
   if (!currentData) return;
-  if (currentData.storagePath) { const s = currentData.storagePath; el('storageInfo','数据: '+(s.length>50?'...'+s.slice(-47):s)); el('storageInfoFooter','数据文件: '+(s.length>50?'...'+s.slice(-47):s)); }
+  if (currentData.storagePath) { const s = currentData.storagePath; el('storageInfo','数据目录: '+(s.length>50?'...'+s.slice(-47):s)); const f = currentData.projectFilePath || currentData.storagePath; el('storageInfoFooter','数据文件: '+(f.length>60?'...'+f.slice(-57):f)); }
   updateProjectSelector(); updateStatsCards(); updateChart(); updateTypeBreakdown();
 }
 function updateProjectSelector() {

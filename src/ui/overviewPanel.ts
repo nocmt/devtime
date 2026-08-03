@@ -51,7 +51,7 @@ export class OverviewPanel {
 
     this.panel.webview.postMessage({
       type: 'updateData',
-      data: { activeProjectId: activeId, allProjects, projectName, records, hourlyRate, currency, storagePath: this.dataStore.getStoragePath() }
+      data: { activeProjectId: activeId, allProjects, projectName, records, hourlyRate, currency, storagePath: this.dataStore.getStoragePath(), projectFilePath: this.dataStore.getProjectDataPath() }
     });
   }
 

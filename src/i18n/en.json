@@ -3,7 +3,7 @@
   "config.idleTimeout": "Idle timeout in seconds",
   "config.currency": "Currency symbol",
   "config.locale": "Interface language",
-  "config.storagePath": "Custom storage path (leave empty for ~/.devtime/)",
+  "config.storagePath": "Custom data storage directory (empty = ~/.devtime/; a .devtime subfolder is created inside the chosen directory)",
   "config.ignoredProjects": "Project folder names to ignore",
   "statusBar.tracking": "$(clock) DevTime: {time}",
   "statusBar.idle": "$(clock) DevTime: Idle",
