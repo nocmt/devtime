@@ -75,9 +75,14 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     const dataStore = new DataStore(workspaceFolder, config.storagePath);
-    log(`  dataRoot = ${dataStore.getStoragePath()}`);
     await dataStore.init();
     log('  存储初始化完成');
+    log(`  dataRoot = ${dataStore.getStoragePath()}`);
+    if (dataStore.wasFallbackUsed()) {
+      const reason = dataStore.getFallbackReason();
+      log(`!! 存储路径回退默认: ${reason}`);
+      vscode.window.showWarningMessage(`DevTime: ${reason}，已回退到默认目录 ${dataStore.getStoragePath()}。请检查 devtime.storagePath 设置。`);
+    }
 
     tracker = new TimeTracker(dataStore, config.idleTimeout);
     overviewPanel = new OverviewPanel(dataStore, context.extensionPath);

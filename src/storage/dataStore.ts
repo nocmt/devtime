@@ -56,22 +56,41 @@ export class DataStore {
   private currentProject: ProjectData | null = null;
   private index: IndexData = { version: DATA_VERSION, projects: {} };
   private writeQueue: Promise<void> = Promise.resolve();
+  private configuredStoragePath?: string;
+  private fallbackUsed = false;
+  private fallbackReason = '';
 
   constructor(workspaceFolder: string, storagePath?: string) {
     this.currentProjectName = path.basename(workspaceFolder);
     this.currentProjectPath = workspaceFolder;
     this.currentProjectId = this.sanitizeProjectId(this.currentProjectName);
+    this.configuredStoragePath = storagePath;
+    this.applyDataRoot(this.resolveDataRoot());
+  }
 
-    if (storagePath && storagePath.trim()) {
-      const p = path.resolve(storagePath.trim());
-      // 自定义目录：若所选目录本身就叫 .devtime 则直接用；否则在其内部创建 .devtime 子目录
-      this.dataRoot = path.basename(p) === '.devtime' ? p : path.join(p, '.devtime');
-    } else {
-      this.dataRoot = path.join(os.homedir(), '.devtime');
+  /**
+   * 解析数据根目录：
+   * - 默认：~/.devtime
+   * - 自定义目录：若所选目录名本身就是 .devtime 则直接用；否则在其中创建 .devtime 子目录
+   * - Windows 上检测到 Unix/Mac 风格绝对路径（如 /Users/xxx）时视为无效配置，回退默认
+   */
+  private resolveDataRoot(): string {
+    if (this.configuredStoragePath && this.configuredStoragePath.trim()) {
+      const raw = this.configuredStoragePath.trim();
+      if (process.platform === 'win32' && raw.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(raw)) {
+        this.fallbackReason = `存储路径 "${raw}" 不是 Windows 路径（可能是从 Mac/Linux 同步的配置）`;
+        return path.join(os.homedir(), '.devtime');
+      }
+      const p = path.resolve(raw);
+      return path.basename(p) === '.devtime' ? p : path.join(p, '.devtime');
     }
+    return path.join(os.homedir(), '.devtime');
+  }
 
-    this.projectsDir = path.join(this.dataRoot, PROJECTS_DIR);
-    this.indexPath = path.join(this.dataRoot, INDEX_FILE);
+  private applyDataRoot(root: string): void {
+    this.dataRoot = root;
+    this.projectsDir = path.join(root, PROJECTS_DIR);
+    this.indexPath = path.join(root, INDEX_FILE);
   }
 
   private sanitizeProjectId(name: string): string {
@@ -84,14 +103,41 @@ export class DataStore {
   /** 数据根目录（用于 UI 展示） */
   getStoragePath(): string { return this.dataRoot; }
 
+  /** 配置的存储路径是否被回退到默认目录 */
+  wasFallbackUsed(): boolean { return this.fallbackUsed; }
+
+  /** 回退原因（用于提示用户） */
+  getFallbackReason(): string { return this.fallbackReason; }
+
   /** 当前项目的数据文件路径 */
   getProjectDataPath(): string {
     return path.join(this.projectsDir, this.currentProjectId + PROJECT_FILE_EXT);
   }
 
   async init(): Promise<void> {
-    await fsp.mkdir(this.dataRoot, { recursive: true });
-    await fsp.mkdir(this.projectsDir, { recursive: true });
+    // 重新解析数据根目录（可能因跨平台无效路径直接回退默认）
+    const resolved = this.resolveDataRoot();
+    if (resolved !== this.dataRoot) {
+      this.applyDataRoot(resolved);
+    }
+    // resolve 阶段已判定配置路径无效（如 Windows 上的 Mac 路径）→ 标记回退
+    if (this.fallbackReason && !this.fallbackUsed) {
+      this.fallbackUsed = true;
+    }
+
+    // 创建目录；配置路径不可用（权限/网络盘等）时回退默认目录，避免激活失败
+    try {
+      await fsp.mkdir(this.dataRoot, { recursive: true });
+      await fsp.mkdir(this.projectsDir, { recursive: true });
+    } catch (e) {
+      if (!this.fallbackReason) {
+        this.fallbackReason = `无法创建存储目录 ${this.dataRoot}: ${e instanceof Error ? e.message : String(e)}`;
+      }
+      this.fallbackUsed = true;
+      this.applyDataRoot(path.join(os.homedir(), '.devtime'));
+      await fsp.mkdir(this.dataRoot, { recursive: true });
+      await fsp.mkdir(this.projectsDir, { recursive: true });
+    }
 
     await this.migrateLegacyIfNeeded();
     await this.loadIndex();
