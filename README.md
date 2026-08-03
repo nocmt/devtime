@@ -19,18 +19,19 @@
 
 ## 数据存储
 
-默认存储在 `~/Library/devtime/` 目录下（不用点开头目录，避免 iCloud/Dropbox 等云盘忽略隐藏文件）：
+默认存储在平台对应目录下（不用点开头目录，避免 iCloud/Dropbox 等云盘忽略隐藏文件）：
 
 ```text
-~/Library/devtime/
-├── projects-index.json      # 轻量索引（各项目名称/路径/总时长）
-└── projects/
-    ├── <项目id>.json        # 每个项目一个独立数据文件
-    └── ...
+macOS:   ~/Library/devtime/
+Windows: ~/devtime/
+└── projects-index.json      # 轻量索引（各项目名称/路径/总时长）
+    └── projects/
+        ├── <项目id>.json    # 每个项目一个独立数据文件
+        └── ...
 ```
 
 - **增量更新**：计时数据只写入当前项目对应的 JSON 文件，索引文件体积很小，不再每次重写全量聚合文件。
-- **迁移兼容**：旧版 `devtime-data.json` 会在首次启动时自动拆分为按项目的文件，原文件保留为 `.migrated` 备份；旧版 `~/.devtime` / `~/devtime` 目录会自动迁移到 `~/Library/devtime`。
+- **迁移兼容**：旧版 `devtime-data.json` 会在首次启动时自动拆分为按项目的文件，原文件保留为 `.migrated` 备份；旧版 `~/.devtime` / `~/devtime` 目录会自动迁移到平台新默认目录（macOS: `~/Library/devtime/`，Windows: `~/devtime/`）。
 
 **跨电脑同步**：在 VS Code 设置中修改 `devtime.storagePath` 为 iCloud/Dropbox 等云盘路径；指定目录后扩展会在该目录内自动创建 `devtime` 子目录存放数据（若所选目录本身就是 `devtime` 则直接使用）：
 
@@ -48,7 +49,7 @@
 | `devtime.idleTimeout` | 空闲超时（秒） | 300 |
 | `devtime.currency` | 货币符号 | ¥ |
 | `devtime.locale` | 界面语言 | zh-CN |
-| `devtime.storagePath` | 数据存储目录 | \~/Library/devtime/ |
+| `devtime.storagePath` | 数据存储目录 | macOS \~/Library/devtime/ · Windows \~/devtime/ |
 | `devtime.ignoredProjects` | 忽略的项目文件夹名 | \[\] |
 
 ## License

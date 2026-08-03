@@ -68,9 +68,17 @@ export class DataStore {
     this.applyDataRoot(this.resolveDataRoot());
   }
 
+  /** 平台默认数据根目录：macOS → ~/Library/devtime，Windows/其他 → ~/devtime */
+  private defaultDataRoot(): string {
+    if (process.platform === 'darwin') {
+      return path.join(os.homedir(), 'Library', 'devtime');
+    }
+    return path.join(os.homedir(), 'devtime');
+  }
+
   /**
    * 解析数据根目录：
-   * - 默认：~/Library/devtime（macOS 惯例，不用点开头目录避免云盘同步忽略隐藏文件）
+   * - 默认：macOS ~/Library/devtime / Windows ~/devtime（不用点开头目录避免云盘同步忽略隐藏文件）
    * - 自定义目录：若所选目录名本身就是 devtime 则直接用；否则在其中创建 devtime 子目录
    * - Windows 上检测到 Unix/Mac 风格绝对路径（如 /Users/xxx）时视为无效配置，回退默认
    */
@@ -79,12 +87,12 @@ export class DataStore {
       const raw = this.configuredStoragePath.trim();
       if (process.platform === 'win32' && raw.startsWith('/') && !/^[a-zA-Z]:[\\/]/.test(raw)) {
         this.fallbackReason = `存储路径 "${raw}" 不是 Windows 路径（可能是从 Mac/Linux 同步的配置）`;
-        return path.join(os.homedir(), 'Library', 'devtime');
+        return this.defaultDataRoot();
       }
       const p = path.resolve(raw);
       return path.basename(p) === 'devtime' ? p : path.join(p, 'devtime');
     }
-    return path.join(os.homedir(), 'Library', 'devtime');
+    return this.defaultDataRoot();
   }
 
   /**
@@ -165,7 +173,7 @@ export class DataStore {
         this.fallbackReason = `无法创建存储目录 ${this.dataRoot}: ${e instanceof Error ? e.message : String(e)}`;
       }
       this.fallbackUsed = true;
-      this.applyDataRoot(path.join(os.homedir(), 'Library', 'devtime'));
+      this.applyDataRoot(this.defaultDataRoot());
       await fsp.mkdir(this.dataRoot, { recursive: true });
       await fsp.mkdir(this.projectsDir, { recursive: true });
     }
