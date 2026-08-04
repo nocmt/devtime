@@ -22,39 +22,30 @@ export interface ProjectData {
   records: Record<string, DailyRecord>;
 }
 
-interface ProjectMeta {
-  name: string;
-  displayPath: string;
-  totalSeconds: number;
-}
-
-interface IndexData {
-  version: number;
-  projects: Record<string, ProjectMeta>;
-}
-
 const DATA_VERSION = 3;
 const PROJECTS_DIR = 'projects';
-const INDEX_FILE = 'projects-index.json';
 const OLD_DATA_FILE = 'devtime-data.json';
 const PROJECT_FILE_EXT = '.json';
 
 /**
- * DataStore v3：
- * - 每个项目一个独立 JSON 文件：<dataRoot>/projects/<projectId>.json
- * - 一个轻量索引文件：<dataRoot>/projects-index.json（只含各项目的名称/路径/总时长，体积很小）
- * - 保存时只写「当前项目文件 + 索引」，不再重写全量聚合文件，实现增量更新
- * - 全部使用异步 IO（fs/promises），避免 Windows 网络盘/主目录不可达时同步阻塞导致"一直激活中"
+ * DataStore v3（分片版）：
+ * - 每台设备只写自己的分片文件：<dataRoot>/projects/<projectId>.<deviceId>.json
+ * - 读取时合并该项目所有分片（<projectId>.json 旧版单文件也兼容并入）
+ * - 多设备同时编辑同一项目：各写各的分片，永不互相覆盖，云同步无文件冲突
+ * - 汇总动态扫描目录，不再共享写入索引文件，避免索引写冲突
+ * - 全部异步 IO；内存优先 + 最小落盘间隔（默认 30 分钟）减少磁盘写入
  */
 export class DataStore {
   private dataRoot: string;
   private projectsDir: string;
-  private indexPath: string;
   private currentProjectId: string | null = null;
   private currentProjectName: string;
   private currentProjectPath: string;
+  private deviceId: string;
+  /** 本设备产生的数据（写盘内容 = 本设备分片） */
+  private localRecords: Record<string, DailyRecord> = {};
+  /** 合并视图：所有分片合并后的当前项目数据（读取/展示用） */
   private currentProject: ProjectData | null = null;
-  private index: IndexData = { version: DATA_VERSION, projects: {} };
   private writeQueue: Promise<void> = Promise.resolve();
   private configuredStoragePath?: string;
   private fallbackUsed = false;
@@ -64,12 +55,18 @@ export class DataStore {
   private lastSaveTime = 0;
   private readonly saveIntervalMs: number;
 
-  constructor(workspaceFolder: string, storagePath?: string, saveIntervalMs: number = 30 * 60 * 1000) {
+  constructor(
+    workspaceFolder: string,
+    storagePath?: string,
+    saveIntervalMs: number = 30 * 60 * 1000,
+    deviceId?: string
+  ) {
     this.currentProjectName = path.basename(workspaceFolder);
     this.currentProjectPath = workspaceFolder;
     this.currentProjectId = this.sanitizeProjectId(this.currentProjectName);
     this.configuredStoragePath = storagePath;
     this.saveIntervalMs = saveIntervalMs;
+    this.deviceId = deviceId || `${os.hostname()}_${Math.random().toString(36).slice(2, 8)}`;
     this.applyDataRoot(this.resolveDataRoot());
   }
 
@@ -103,7 +100,7 @@ export class DataStore {
   /**
    * 旧版数据根目录候选（用于升级迁移）：
    * - 自定义目录：<目录>/.devtime
-   * - 默认目录：~/.devtime 与 ~/devtime（两个历史版本都迁移到 ~/Library/devtime）
+   * - 默认目录：~/.devtime 与 ~/devtime（两个历史版本都迁移到平台默认目录）
    */
   private legacyDataRoots(): string[] {
     if (this.configuredStoragePath && this.configuredStoragePath.trim()) {
@@ -131,7 +128,6 @@ export class DataStore {
   private applyDataRoot(root: string): void {
     this.dataRoot = root;
     this.projectsDir = path.join(root, PROJECTS_DIR);
-    this.indexPath = path.join(root, INDEX_FILE);
   }
 
   private sanitizeProjectId(name: string): string {
@@ -140,6 +136,7 @@ export class DataStore {
 
   getProjectId(): string { return this.currentProjectId!; }
   getProjectName(): string { return this.currentProjectName; }
+  getDeviceId(): string { return this.deviceId; }
 
   /** 数据根目录（用于 UI 展示） */
   getStoragePath(): string { return this.dataRoot; }
@@ -150,9 +147,31 @@ export class DataStore {
   /** 回退原因（用于提示用户） */
   getFallbackReason(): string { return this.fallbackReason; }
 
-  /** 当前项目的数据文件路径 */
+  /** 当前项目本设备分片文件路径 */
   getProjectDataPath(): string {
-    return path.join(this.projectsDir, this.currentProjectId + PROJECT_FILE_EXT);
+    return path.join(this.projectsDir, this.projectFileName(this.currentProjectId!));
+  }
+
+  private projectFileName(projectId: string): string {
+    return `${projectId}.${this.deviceId}${PROJECT_FILE_EXT}`;
+  }
+
+  /** 某项目的所有分片文件（含旧版无设备后缀 <id>.json），按文件名排序保证稳定 */
+  private async listProjectFiles(projectId: string): Promise<string[]> {
+    let files: string[] = [];
+    try {
+      files = (await fsp.readdir(this.projectsDir)).filter(f => f.endsWith(PROJECT_FILE_EXT));
+    } catch {
+      return [];
+    }
+    return files
+      .filter(f => f === `${projectId}${PROJECT_FILE_EXT}` || f.startsWith(`${projectId}.`))
+      .sort();
+  }
+
+  /** 从分片文件名提取 projectId（projectId 不含点，取第一个点前） */
+  private projectIdFromFile(fileName: string): string {
+    return fileName.split('.')[0];
   }
 
   async init(): Promise<void> {
@@ -184,17 +203,16 @@ export class DataStore {
     }
 
     await this.migrateLegacyIfNeeded();
-    await this.loadIndex();
     await this.loadCurrentProject();
 
-    // 首次运行/新项目时，落盘当前项目文件与索引
+    // 首次运行/新项目时，确保本设备分片存在
     await this.saveData();
     this.lastSaveTime = Date.now();
   }
 
   /**
    * 迁移旧版单一聚合文件 devtime-data.json（v1/v2）→ 按项目拆分
-   * 迁移完成后原文件保留为 devtime-data.json.migrated 备份，避免重复迁移
+   * 拆出的数据写入本设备分片；原文件保留为 devtime-data.json.migrated 备份
    */
   private async migrateLegacyIfNeeded(): Promise<void> {
     let legacyPath = path.join(this.dataRoot, OLD_DATA_FILE);
@@ -230,12 +248,16 @@ export class DataStore {
     }
 
     for (const [id, p] of Object.entries(projects)) {
-      await this.writeJsonAtomic(path.join(this.projectsDir, id + PROJECT_FILE_EXT), {
-        version: DATA_VERSION,
-        name: p.name,
-        displayPath: p.displayPath,
-        records: p.records,
-      });
+      // 只写入本设备分片，不覆盖其他设备可能已写的分片
+      const target = this.projectFileName(id);
+      if (!await this.fileExists(path.join(this.projectsDir, target))) {
+        await this.writeJsonAtomic(path.join(this.projectsDir, target), {
+          version: DATA_VERSION,
+          name: p.name,
+          displayPath: p.displayPath,
+          records: p.records,
+        });
+      }
     }
 
     // 备份旧文件并移除原始文件，防止重复迁移
@@ -248,48 +270,28 @@ export class DataStore {
     }
   }
 
-  /** 加载索引；若不存在则扫描 projects 目录重建 */
-  private async loadIndex(): Promise<void> {
-    if (await this.fileExists(this.indexPath)) {
-      try {
-        const idx = JSON.parse(await fsp.readFile(this.indexPath, 'utf-8'));
-        if (idx && idx.projects) {
-          this.index = { version: DATA_VERSION, projects: idx.projects };
-          return;
-        }
-      } catch { /* fall through to scan */ }
-    }
-
-    this.index = { version: DATA_VERSION, projects: {} };
-    let files: string[] = [];
-    try { files = (await fsp.readdir(this.projectsDir)).filter(f => f.endsWith(PROJECT_FILE_EXT)); } catch { return; }
-    for (const f of files) {
-      const id = f.slice(0, -PROJECT_FILE_EXT.length);
-      try {
-        const p = JSON.parse(await fsp.readFile(path.join(this.projectsDir, f), 'utf-8'));
-        this.index.projects[id] = {
-          name: p.name || id,
-          displayPath: p.displayPath || '',
-          totalSeconds: this.sumRecords(p.records),
-        };
-      } catch { /* ignore corrupted file */ }
-    }
-  }
-
+  /** 加载当前项目：合并所有分片到合并视图，本设备分片单独存 localRecords */
   private async loadCurrentProject(): Promise<void> {
     if (!this.currentProjectId) return;
-    if (await this.fileExists(this.getProjectDataPath())) {
+    const files = await this.listProjectFiles(this.currentProjectId);
+    this.localRecords = {};
+    const merged: Record<string, DailyRecord> = {};
+    let name = this.currentProjectName;
+    let displayPath = this.currentProjectPath;
+
+    for (const f of files) {
       try {
-        const p = JSON.parse(await fsp.readFile(this.getProjectDataPath(), 'utf-8'));
-        this.currentProject = {
-          name: p.name || this.currentProjectName,
-          displayPath: p.displayPath || this.currentProjectPath,
-          records: p.records || {},
-        };
-        return;
-      } catch { /* fall through to empty */ }
+        const p = JSON.parse(await fsp.readFile(path.join(this.projectsDir, f), 'utf-8'));
+        if (p.name) name = p.name;
+        if (p.displayPath) displayPath = p.displayPath;
+        if (f === this.projectFileName(this.currentProjectId)) {
+          this.localRecords = p.records || {};
+        }
+        Object.assign(merged, this.mergeRecords(merged, p.records || {}));
+      } catch { /* ignore corrupted file */ }
     }
-    this.currentProject = { name: this.currentProjectName, displayPath: this.currentProjectPath, records: {} };
+
+    this.currentProject = { name, displayPath, records: merged };
   }
 
   private sumRecords(records: Record<string, DailyRecord> | undefined): number {
@@ -297,27 +299,21 @@ export class DataStore {
     return Object.values(records).reduce((s, r) => s + (r?.totalSeconds || 0), 0);
   }
 
-  /** 只写当前项目文件 + 轻量索引，实现增量更新；串行队列防止并发写冲突 */
+  /** 只写本设备分片文件（不写共享索引），串行队列防止并发写冲突 */
   async saveData(): Promise<void> {
-    if (!this.currentProjectId || !this.currentProject) return;
-
-    this.index.projects[this.currentProjectId] = {
-      name: this.currentProject.name,
-      displayPath: this.currentProject.displayPath,
-      totalSeconds: this.sumRecords(this.currentProject.records),
-    };
-
-    const projectFile = this.getProjectDataPath();
-    const indexData = this.index;
+    if (!this.currentProjectId) return;
+    const file = this.getProjectDataPath();
+    const localData = this.localRecords;
+    const name = this.currentProject?.name || this.currentProjectName;
+    const displayPath = this.currentProject?.displayPath || this.currentProjectPath;
 
     return this.enqueueWrite(async () => {
-      await this.writeJsonAtomic(projectFile, {
+      await this.writeJsonAtomic(file, {
         version: DATA_VERSION,
-        name: this.currentProject!.name,
-        displayPath: this.currentProject!.displayPath,
-        records: this.currentProject!.records,
+        name,
+        displayPath,
+        records: localData,
       });
-      await this.writeJsonAtomic(this.indexPath, indexData);
     });
   }
 
@@ -330,11 +326,21 @@ export class DataStore {
   async addEntry(entry: TimeEntry): Promise<void> {
     if (!this.currentProjectId || !this.currentProject) return;
     const today = new Date().toISOString().split('T')[0];
+
+    // 本设备分片
+    if (!this.localRecords[today]) {
+      this.localRecords[today] = { date: today, entries: [], totalSeconds: 0 };
+    }
+    this.localRecords[today].entries.push(entry);
+    this.localRecords[today].totalSeconds += entry.duration;
+
+    // 合并视图（读取/展示用）
     if (!this.currentProject.records[today]) {
       this.currentProject.records[today] = { date: today, entries: [], totalSeconds: 0 };
     }
     this.currentProject.records[today].entries.push(entry);
     this.currentProject.records[today].totalSeconds += entry.duration;
+
     // 只更新内存，按最小间隔（默认 30 分钟）落盘，减少磁盘写入
     this.scheduleSave();
   }
@@ -364,45 +370,80 @@ export class DataStore {
     }
   }
 
-  /** 实际写盘：落盘前与磁盘最新数据合并（多设备同步不丢增量），仅当有未落盘变化时写入 */
+  /** 实际写盘：仅当有未落盘变化时写入（分片写入天然无设备间覆盖问题） */
   private async doFlush(): Promise<void> {
     if (!this.dirty) return;
-    await this.mergeWithDisk();
-    await this.mergeIndexWithDisk();
     await this.saveData();
     this.dirty = false;
     this.lastSaveTime = Date.now();
   }
 
-  /**
-   * 合并磁盘上其他设备/窗口可能写入的当前项目数据到内存
-   * 按条目 key（start|type|filePath）去重取并集，避免覆盖丢失
-   */
-  private async mergeWithDisk(): Promise<void> {
-    if (!this.currentProjectId || !this.currentProject) return;
-    const file = this.getProjectDataPath();
-    if (!await this.fileExists(file)) return;
-    let disk: { name: string; displayPath: string; records: Record<string, DailyRecord> };
-    try {
-      const p = JSON.parse(await fsp.readFile(file, 'utf-8'));
-      disk = { name: p.name || this.currentProjectName, displayPath: p.displayPath || this.currentProjectPath, records: p.records || {} };
-    } catch {
-      return;
+  /** 立即落盘（供停止计时/关闭窗口/打开概览时调用，保证数据不丢） */
+  async flushNow(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
     }
-    this.currentProject.records = this.mergeRecords(disk.records, this.currentProject.records);
-    if (this.currentProject.name !== disk.name) this.currentProject.name = disk.name;
-    if (this.currentProject.displayPath !== disk.displayPath) this.currentProject.displayPath = disk.displayPath;
+    await this.doFlush();
   }
 
-  /** 合并磁盘索引（其他设备新增的项目不丢） */
-  private async mergeIndexWithDisk(): Promise<void> {
-    if (!await this.fileExists(this.indexPath)) return;
+  getCurrentProjectData(): { name: string; records: Record<string, DailyRecord> } {
+    return {
+      name: this.currentProject?.name || this.currentProjectName,
+      records: this.currentProject?.records || {},
+    };
+  }
+
+  /** 读取某项目：合并其全部分片 */
+  async getProjectData(projectId: string): Promise<{ name: string; records: Record<string, DailyRecord> } | null> {
+    const files = await this.listProjectFiles(projectId);
+    if (files.length === 0) return null;
+    let records: Record<string, DailyRecord> = {};
+    let name = projectId;
+    for (const f of files) {
+      try {
+        const p = JSON.parse(await fsp.readFile(path.join(this.projectsDir, f), 'utf-8'));
+        if (p.name) name = p.name;
+        records = this.mergeRecords(records, p.records || {});
+      } catch { /* ignore */ }
+    }
+    return { name, records };
+  }
+
+  getTodayRecord(): DailyRecord | undefined {
+    if (!this.currentProject) return undefined;
+    return this.currentProject.records[new Date().toISOString().split('T')[0]];
+  }
+
+  /** 汇总：动态扫描目录，对每个项目合并所有分片求总时长（不再依赖共享索引） */
+  async getAllProjectsSummary(): Promise<Array<{ id: string; name: string; totalSeconds: number }>> {
+    let files: string[] = [];
     try {
-      const idx = JSON.parse(await fsp.readFile(this.indexPath, 'utf-8'));
-      if (idx && idx.projects) {
-        this.index.projects = { ...idx.projects, ...this.index.projects };
-      }
-    } catch { /* ignore */ }
+      files = (await fsp.readdir(this.projectsDir)).filter(f => f.endsWith(PROJECT_FILE_EXT));
+    } catch {
+      return [];
+    }
+
+    const map = new Map<string, { name: string; totalSeconds: number }>();
+    for (const f of files) {
+      const id = this.projectIdFromFile(f);
+      if (!id) continue;
+      try {
+        const p = JSON.parse(await fsp.readFile(path.join(this.projectsDir, f), 'utf-8'));
+        const total = this.sumRecords(p.records);
+        const cur = map.get(id);
+        if (cur) {
+          cur.totalSeconds += total;
+          if (p.name) cur.name = p.name;
+        } else {
+          map.set(id, { name: p.name || id, totalSeconds: total });
+        }
+      } catch { /* ignore corrupted file */ }
+    }
+
+    return Array.from(map.entries())
+      .map(([id, m]) => ({ id, name: m.name, totalSeconds: m.totalSeconds }))
+      .sort((a, b) => b.totalSeconds - a.totalSeconds);
   }
 
   /** 按日期合并两条记录，条目按 key 去重取并集，totalSeconds 重算 */
@@ -432,53 +473,6 @@ export class DataStore {
 
   private entryKey(e: TimeEntry): string {
     return `${e.start}|${e.type}|${e.filePath || ''}`;
-  }
-
-  /** 立即落盘（供停止计时/关闭窗口/打开概览时调用，保证数据不丢） */
-  async flushNow(): Promise<void> {
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-    }
-    await this.doFlush();
-  }
-
-  getCurrentProjectData(): { name: string; records: Record<string, DailyRecord> } {
-    return {
-      name: this.currentProject?.name || this.currentProjectName,
-      records: this.currentProject?.records || {},
-    };
-  }
-
-  async getProjectData(projectId: string): Promise<{ name: string; records: Record<string, DailyRecord> } | null> {
-    const file = path.join(this.projectsDir, projectId + PROJECT_FILE_EXT);
-    if (!await this.fileExists(file)) return null;
-    try {
-      const p = JSON.parse(await fsp.readFile(file, 'utf-8'));
-      return { name: p.name || projectId, records: p.records || {} };
-    } catch {
-      return null;
-    }
-  }
-
-  getTodayRecord(): DailyRecord | undefined {
-    if (!this.currentProject) return undefined;
-    return this.currentProject.records[new Date().toISOString().split('T')[0]];
-  }
-
-  async getAllProjectsSummary(): Promise<Array<{ id: string; name: string; totalSeconds: number }>> {
-    // 重新读取索引文件，保证多窗口写入时汇总数据是最新的（文件很小，开销可忽略）
-    let projects = this.index.projects;
-    try {
-      if (await this.fileExists(this.indexPath)) {
-        const idx = JSON.parse(await fsp.readFile(this.indexPath, 'utf-8'));
-        if (idx && idx.projects) projects = idx.projects;
-      }
-    } catch { /* use in-memory */ }
-
-    return Object.entries(projects)
-      .map(([id, m]) => ({ id, name: m.name, totalSeconds: m.totalSeconds || 0 }))
-      .sort((a, b) => b.totalSeconds - a.totalSeconds);
   }
 
   private async fileExists(p: string): Promise<boolean> {

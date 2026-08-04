@@ -24,13 +24,14 @@
 ```text
 macOS:   ~/Library/devtime/
 Windows: ~/devtime/
-└── projects-index.json      # 轻量索引（各项目名称/路径/总时长）
-    └── projects/
-        ├── <项目id>.json    # 每个项目一个独立数据文件
-        └── ...
+└── projects/
+    ├── <项目id>.<设备id>.json  # 每台设备一个独立分片文件
+    ├── <项目id>.<设备id>.json  # 其他设备的分片
+    └── ...
 ```
 
-- **增量更新**：计时数据只写入当前项目对应的 JSON 文件，索引文件体积很小，不再每次重写全量聚合文件。
+- **增量更新**：计时数据只写入当前项目对应的 JSON 文件，不再每次重写全量聚合文件。
+- **多设备分片**：每台设备只写自己的分片文件（`<项目id>.<设备id>.json`），读取时自动合并所有分片——两台电脑同时编辑同一项目也不会互相覆盖；项目 ID 不含点，旧版无设备后缀的单文件（`<项目id>.json`）仍会兼容合并。
 - **迁移兼容**：旧版 `devtime-data.json` 会在首次启动时自动拆分为按项目的文件，原文件保留为 `.migrated` 备份；旧版 `~/.devtime` / `~/devtime` 目录会自动迁移到平台新默认目录（macOS: `~/Library/devtime/`，Windows: `~/devtime/`）。
 
 **跨电脑同步**：在 VS Code 设置中修改 `devtime.storagePath` 为 iCloud/Dropbox 等云盘路径；指定目录后扩展会在该目录内自动创建 `devtime` 子目录存放数据（若所选目录本身就是 `devtime` 则直接使用）：

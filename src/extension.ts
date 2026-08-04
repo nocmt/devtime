@@ -11,6 +11,17 @@ let tracker: TimeTracker | undefined;
 let overviewPanel: OverviewPanel | undefined;
 let logChannel: vscode.OutputChannel;
 
+/** 获取本机稳定设备 ID（存 VS Code 全局状态，每台机器独立、不随 Settings Sync 同步） */
+function getDeviceId(context: vscode.ExtensionContext): string {
+  const KEY = 'devtime.deviceId';
+  let id = context.globalState.get<string>(KEY);
+  if (!id) {
+    id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    void context.globalState.update(KEY, id);
+  }
+  return id;
+}
+
 function log(msg: string): void {
   const line = `[${new Date().toLocaleTimeString()}] ${msg}`;
   console.log(line);
@@ -74,7 +85,7 @@ export async function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    const dataStore = new DataStore(workspaceFolder, config.storagePath);
+    const dataStore = new DataStore(workspaceFolder, config.storagePath, 30 * 60 * 1000, getDeviceId(context));
     await dataStore.init();
     log('  存储初始化完成');
     log(`  dataRoot = ${dataStore.getStoragePath()}`);
