@@ -39,6 +39,8 @@ export class OverviewPanel {
 
   private async sendDataToWebview(): Promise<void> {
     if (!this.panel) return;
+    // 打开概览前先落盘，确保概览读到最新数据（无变化时不会真正写盘）
+    await this.dataStore.flushNow();
     const config = vscode.workspace.getConfiguration('devtime');
     const hourlyRate = config.get<number>('hourlyRate', 100);
     const currency = config.get<string>('currency', '¥');

@@ -60,13 +60,16 @@ export class DataStore {
   private fallbackUsed = false;
   private fallbackReason = '';
   private saveTimer: NodeJS.Timeout | null = null;
-  private readonly SAVE_DEBOUNCE_MS = 1000;
+  private dirty = false;
+  private lastSaveTime = 0;
+  private readonly saveIntervalMs: number;
 
-  constructor(workspaceFolder: string, storagePath?: string) {
+  constructor(workspaceFolder: string, storagePath?: string, saveIntervalMs: number = 30 * 60 * 1000) {
     this.currentProjectName = path.basename(workspaceFolder);
     this.currentProjectPath = workspaceFolder;
     this.currentProjectId = this.sanitizeProjectId(this.currentProjectName);
     this.configuredStoragePath = storagePath;
+    this.saveIntervalMs = saveIntervalMs;
     this.applyDataRoot(this.resolveDataRoot());
   }
 
@@ -186,6 +189,7 @@ export class DataStore {
 
     // 首次运行/新项目时，落盘当前项目文件与索引
     await this.saveData();
+    this.lastSaveTime = Date.now();
   }
 
   /**
@@ -331,26 +335,50 @@ export class DataStore {
     }
     this.currentProject.records[today].entries.push(entry);
     this.currentProject.records[today].totalSeconds += entry.duration;
-    // 只更新内存，防抖合并写盘，避免高频编辑时频繁落盘
+    // 只更新内存，按最小间隔（默认 30 分钟）落盘，减少磁盘写入
     this.scheduleSave();
   }
 
-  /** 防抖落盘：多次 addEntry 合并为一次写入 */
+  /**
+   * 计划落盘：距离上次落盘不足最小间隔时，仅标记脏并推迟；
+   * 到达间隔后有变化才真正写入。高频写入不会频繁触发磁盘 IO。
+   */
   private scheduleSave(): void {
-    if (this.saveTimer) clearTimeout(this.saveTimer);
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = null;
-      void this.saveData().catch((e) => console.error(`[DevTime] 落盘失败: ${e instanceof Error ? e.message : String(e)}`));
-    }, this.SAVE_DEBOUNCE_MS);
+    this.dirty = true;
+    const now = Date.now();
+    const elapsed = now - this.lastSaveTime;
+    if (elapsed >= this.saveIntervalMs) {
+      // 已到最小间隔：立即落盘
+      if (this.saveTimer) {
+        clearTimeout(this.saveTimer);
+        this.saveTimer = null;
+      }
+      void this.doFlush().catch((e) => console.error(`[DevTime] 落盘失败: ${e instanceof Error ? e.message : String(e)}`));
+      return;
+    }
+    if (!this.saveTimer) {
+      this.saveTimer = setTimeout(() => {
+        this.saveTimer = null;
+        void this.doFlush().catch((e) => console.error(`[DevTime] 落盘失败: ${e instanceof Error ? e.message : String(e)}`));
+      }, this.saveIntervalMs - elapsed);
+    }
   }
 
-  /** 立即落盘（供停止计时/停用/空闲暂停时调用，保证数据不丢） */
+  /** 实际写盘：仅当有未落盘变化时写入，成功后更新时间戳 */
+  private async doFlush(): Promise<void> {
+    if (!this.dirty) return;
+    await this.saveData();
+    this.dirty = false;
+    this.lastSaveTime = Date.now();
+  }
+
+  /** 立即落盘（供停止计时/关闭窗口/打开概览时调用，保证数据不丢） */
   async flushNow(): Promise<void> {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;
     }
-    await this.saveData();
+    await this.doFlush();
   }
 
   getCurrentProjectData(): { name: string; records: Record<string, DailyRecord> } {
