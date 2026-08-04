@@ -34,7 +34,7 @@ export class TimeTracker {
 
     this.idleDetector = new IdleDetector(idleTimeout, (idle) => {
       if (idle && this.isTracking) {
-        this.pauseTracking();
+        void this.pauseTracking().catch((e) => console.error(`[DevTime] 空闲落盘失败: ${e}`));
       } else if (!idle && this.isTracking) {
         this.resumeTracking();
       }
@@ -81,6 +81,7 @@ export class TimeTracker {
 
   /**
    * 记录编辑活动
+   * 同一文件同类型的连续编辑合并到当前条目，不中断（避免每次击键都切条目/写盘）
    */
   private recordEditActivity(filePath: string, source: EditSource): void {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -88,7 +89,12 @@ export class TimeTracker {
 
     const relativePath = filePath.replace(workspaceFolder, '').replace(/^\//, '');
 
-    // 如果已有活跃条目，先结束它
+    // 同一文件、同一来源的连续编辑：沿用当前条目，不结束
+    if (this.currentEntry && this.currentEntry.filePath === relativePath && this.currentEntry.type === source) {
+      return;
+    }
+
+    // 换文件或来源变化：先结束上一条
     if (this.currentEntry) {
       this.finishCurrentEntry();
     }
@@ -161,13 +167,15 @@ export class TimeTracker {
   /**
    * 暂停追踪（空闲时）
    */
-  private pauseTracking(): void {
+  private async pauseTracking(): Promise<void> {
     if (this.currentEntry) {
-      this.finishCurrentEntry();
+      await this.finishCurrentEntry();
     }
     if (this.currentViewFile) {
-      this.finishFileView();
+      await this.finishFileView();
     }
+    // 空闲时立即落盘，避免数据停留在内存
+    await this.dataStore.flushNow();
   }
 
   /**
@@ -189,6 +197,9 @@ export class TimeTracker {
     if (this.currentViewFile) {
       await this.finishFileView();
     }
+
+    // 停止时立即落盘，保证所有数据写入
+    await this.dataStore.flushNow();
 
     this.stopStatusUpdate();
     this.updateStatusBar();
@@ -272,7 +283,7 @@ export class TimeTracker {
   }
 
   dispose(): void {
-    this.stop();
+    void this.stop().catch((e) => console.error(`[DevTime] 停止落盘失败: ${e}`));
     this.idleDetector.dispose();
     this.statusBarItem.dispose();
     this.stopStatusUpdate();

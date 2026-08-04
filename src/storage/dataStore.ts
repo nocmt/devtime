@@ -59,6 +59,8 @@ export class DataStore {
   private configuredStoragePath?: string;
   private fallbackUsed = false;
   private fallbackReason = '';
+  private saveTimer: NodeJS.Timeout | null = null;
+  private readonly SAVE_DEBOUNCE_MS = 1000;
 
   constructor(workspaceFolder: string, storagePath?: string) {
     this.currentProjectName = path.basename(workspaceFolder);
@@ -329,6 +331,25 @@ export class DataStore {
     }
     this.currentProject.records[today].entries.push(entry);
     this.currentProject.records[today].totalSeconds += entry.duration;
+    // 只更新内存，防抖合并写盘，避免高频编辑时频繁落盘
+    this.scheduleSave();
+  }
+
+  /** 防抖落盘：多次 addEntry 合并为一次写入 */
+  private scheduleSave(): void {
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      void this.saveData().catch((e) => console.error(`[DevTime] 落盘失败: ${e instanceof Error ? e.message : String(e)}`));
+    }, this.SAVE_DEBOUNCE_MS);
+  }
+
+  /** 立即落盘（供停止计时/停用/空闲暂停时调用，保证数据不丢） */
+  async flushNow(): Promise<void> {
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
     await this.saveData();
   }
 
