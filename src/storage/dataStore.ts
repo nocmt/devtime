@@ -364,12 +364,74 @@ export class DataStore {
     }
   }
 
-  /** 实际写盘：仅当有未落盘变化时写入，成功后更新时间戳 */
+  /** 实际写盘：落盘前与磁盘最新数据合并（多设备同步不丢增量），仅当有未落盘变化时写入 */
   private async doFlush(): Promise<void> {
     if (!this.dirty) return;
+    await this.mergeWithDisk();
+    await this.mergeIndexWithDisk();
     await this.saveData();
     this.dirty = false;
     this.lastSaveTime = Date.now();
+  }
+
+  /**
+   * 合并磁盘上其他设备/窗口可能写入的当前项目数据到内存
+   * 按条目 key（start|type|filePath）去重取并集，避免覆盖丢失
+   */
+  private async mergeWithDisk(): Promise<void> {
+    if (!this.currentProjectId || !this.currentProject) return;
+    const file = this.getProjectDataPath();
+    if (!await this.fileExists(file)) return;
+    let disk: { name: string; displayPath: string; records: Record<string, DailyRecord> };
+    try {
+      const p = JSON.parse(await fsp.readFile(file, 'utf-8'));
+      disk = { name: p.name || this.currentProjectName, displayPath: p.displayPath || this.currentProjectPath, records: p.records || {} };
+    } catch {
+      return;
+    }
+    this.currentProject.records = this.mergeRecords(disk.records, this.currentProject.records);
+    if (this.currentProject.name !== disk.name) this.currentProject.name = disk.name;
+    if (this.currentProject.displayPath !== disk.displayPath) this.currentProject.displayPath = disk.displayPath;
+  }
+
+  /** 合并磁盘索引（其他设备新增的项目不丢） */
+  private async mergeIndexWithDisk(): Promise<void> {
+    if (!await this.fileExists(this.indexPath)) return;
+    try {
+      const idx = JSON.parse(await fsp.readFile(this.indexPath, 'utf-8'));
+      if (idx && idx.projects) {
+        this.index.projects = { ...idx.projects, ...this.index.projects };
+      }
+    } catch { /* ignore */ }
+  }
+
+  /** 按日期合并两条记录，条目按 key 去重取并集，totalSeconds 重算 */
+  private mergeRecords(
+    a: Record<string, DailyRecord>,
+    b: Record<string, DailyRecord>
+  ): Record<string, DailyRecord> {
+    const result: Record<string, DailyRecord> = { ...a };
+    for (const [date, dayB] of Object.entries(b)) {
+      const dayA = result[date];
+      if (!dayA) {
+        result[date] = dayB;
+        continue;
+      }
+      const map = new Map<string, TimeEntry>();
+      for (const e of dayA.entries) map.set(this.entryKey(e), e);
+      for (const e of dayB.entries) map.set(this.entryKey(e), e);
+      const entries = Array.from(map.values()).sort((x, y) => x.start.localeCompare(y.start));
+      result[date] = {
+        date,
+        entries,
+        totalSeconds: entries.reduce((s, e) => s + e.duration, 0),
+      };
+    }
+    return result;
+  }
+
+  private entryKey(e: TimeEntry): string {
+    return `${e.start}|${e.type}|${e.filePath || ''}`;
   }
 
   /** 立即落盘（供停止计时/关闭窗口/打开概览时调用，保证数据不丢） */
